@@ -13,5 +13,5 @@
     "verbatimModuleSyntax": false,
     "erasableSyntaxOnly": true
   },
-  "include": ["server/src", "server/test", "shared", "client/src"]
+  "include": ["server/src", "server/test", "shared"]
 }
