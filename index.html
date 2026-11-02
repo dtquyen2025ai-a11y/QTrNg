@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chùa Tâm An</title>
+<meta name="description" content="Lên chùa online: gõ mõ, niệm Phật, thắp hương, xin xăm, thả hoa đăng và tích công đức mỗi ngày.">
+<meta name="theme-color" content="#7a1f12">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%237a1f12'/%3E%3Cpath d='M32 14c-6 8-6 14 0 20 6-6 6-12 0-20zM18 30c2 9 7 13 14 14-1-7-6-12-14-14zm28 0c-8 2-13 7-14 14 7-1 12-5 14-14z' fill='%23f2c14e'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="lotus" aria-hidden="true">❀</span>
+      <div>
+        <h1>Chùa Tâm An</h1>
+        <p id="greeting">Nam Mô A Di Đà Phật</p>
+      </div>
+    </div>
+    <div class="merit-pill" title="Tổng công đức">
+      <span class="merit-label">Công đức</span>
+      <span id="meritTotal">0</span>
+    </div>
+  </header>
+
+  <!-- Cảnh chùa -->
+  <section class="scene" aria-hidden="true">
+    <svg id="sceneSvg" viewBox="0 0 400 240" preserveAspectRatio="xMidYMax slice">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+          <stop id="skyTop" offset="0" stop-color="#f7d9a8"/>
+          <stop id="skyBot" offset="1" stop-color="#fbeed6"/>
+        </linearGradient>
+        <linearGradient id="roof" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#a5361f"/>
+          <stop offset="1" stop-color="#6e1d10"/>
+        </linearGradient>
+        <radialGradient id="glow" cx=".5" cy=".5" r=".5">
+          <stop offset="0" stop-color="#ffd27a" stop-opacity=".9"/>
+          <stop offset="1" stop-color="#ffd27a" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <rect width="400" height="240" fill="url(#sky)"/>
+      <circle id="sunMoon" cx="320" cy="50" r="18" fill="#f6b84b"/>
+      <!-- núi -->
+      <path d="M0 170 L60 110 L110 150 L170 90 L240 160 L300 105 L360 150 L400 120 L400 240 L0 240Z" fill="#8aa37b" opacity=".55"/>
+      <path d="M0 190 L80 140 L150 180 L220 130 L300 185 L400 150 L400 240 L0 240Z" fill="#5f7d55" opacity=".7"/>
+      <!-- chùa -->
+      <g transform="translate(200 0)">
+        <rect x="-70" y="168" width="140" height="44" fill="#e9d2a8"/>
+        <rect x="-16" y="182" width="32" height="30" fill="#5a2a14"/>
+        <circle cx="0" cy="190" r="22" fill="url(#glow)" class="door-glow"/>
+        <rect x="-52" y="182" width="16" height="20" fill="#5a2a14" opacity=".8"/>
+        <rect x="36" y="182" width="16" height="20" fill="#5a2a14" opacity=".8"/>
+        <path d="M-96 170 Q-80 166 -74 150 L74 150 Q80 166 96 170 Q60 162 0 162 Q-60 162 -96 170Z" fill="url(#roof)"/>
+        <rect x="-50" y="128" width="100" height="24" fill="#e9d2a8"/>
+        <path d="M-74 130 Q-60 126 -56 112 L56 112 Q60 126 74 130 Q40 122 0 122 Q-40 122 -74 130Z" fill="url(#roof)"/>
+        <rect x="-26" y="96" width="52" height="18" fill="#e9d2a8"/>
+        <path d="M-46 98 Q-36 94 -32 82 L32 82 Q36 94 46 98 Q20 90 0 90 Q-20 90 -46 98Z" fill="url(#roof)"/>
+        <path d="M0 62 L4 82 L-4 82Z" fill="#c8932f"/>
+        <circle cx="0" cy="60" r="3" fill="#f2c14e"/>
+        <text x="0" y="146" text-anchor="middle" font-size="9" fill="#6e1d10" font-weight="700">TÂM AN TỰ</text>
+      </g>
+      <!-- cây -->
+      <g fill="#3f5e3a">
+        <ellipse cx="60" cy="190" rx="26" ry="30"/><rect x="57" y="200" width="6" height="20" fill="#5a3b22"/>
+        <ellipse cx="345" cy="188" rx="24" ry="32"/><rect x="342" y="200" width="6" height="20" fill="#5a3b22"/>
+      </g>
+      <rect y="212" width="400" height="28" fill="#c9a874"/>
+      <g id="stars" opacity="0"></g>
+    </svg>
+  </section>
+
+  <!-- Tab -->
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="mo" aria-selected="true">🪵<span>Gõ mõ</span></button>
+    <button role="tab" data-tab="huong">🕯️<span>Thắp hương</span></button>
+    <button role="tab" data-tab="xam">🎋<span>Xin xăm</span></button>
+    <button role="tab" data-tab="den">🪷<span>Hoa đăng</span></button>
+    <button role="tab" data-tab="so">📜<span>Sổ công đức</span></button>
+  </nav>
+
+  <main>
+    <!-- GÕ MÕ -->
+    <section class="panel active" id="tab-mo" role="tabpanel">
+      <div class="chant-select">
+        <label for="chant">Câu niệm</label>
+        <select id="chant">
+          <option>Nam Mô A Di Đà Phật</option>
+          <option>Nam Mô Bổn Sư Thích Ca Mâu Ni Phật</option>
+          <option>Nam Mô Đại Bi Quán Thế Âm Bồ Tát</option>
+          <option>Nam Mô Dược Sư Lưu Ly Quang Vương Phật</option>
+        </select>
+      </div>
+      <div class="mo-wrap">
+        <div class="float-layer" id="floatLayer"></div>
+        <button class="mo" id="moBtn" aria-label="Gõ mõ">
+          <svg viewBox="0 0 200 170" aria-hidden="true">
+            <defs>
+              <radialGradient id="wood" cx=".4" cy=".35" r=".75">
+                <stop offset="0" stop-color="#d8913f"/>
+                <stop offset=".6" stop-color="#a5561f"/>
+                <stop offset="1" stop-color="#6b3010"/>
+              </radialGradient>
+            </defs>
+            <ellipse cx="100" cy="160" rx="80" ry="8" fill="#000" opacity=".15"/>
+            <path d="M20 110 C20 50 60 20 100 20 C140 20 180 50 180 110 C180 145 145 158 100 158 C55 158 20 145 20 110Z" fill="url(#wood)"/>
+            <path d="M40 112 Q100 128 160 112" stroke="#3d1a07" stroke-width="7" fill="none" stroke-linecap="round"/>
+            <path d="M60 60 Q100 40 140 60" stroke="#f1b56b" stroke-width="3" fill="none" opacity=".5"/>
+            <circle cx="70" cy="90" r="5" fill="#3d1a07" opacity=".6"/>
+            <circle cx="130" cy="90" r="5" fill="#3d1a07" opacity=".6"/>
+          </svg>
+        </button>
+        <div class="dui" id="dui" aria-hidden="true"></div>
+      </div>
+      <p class="hint">Chạm vào mõ hoặc nhấn phím <kbd>Space</kbd></p>
+
+      <div class="mala">
+        <div class="mala-ring" id="malaRing"></div>
+        <div class="mala-center">
+          <strong id="malaCount">0</strong><span>/108</span>
+          <small>Chuỗi thứ <b id="malaRounds">0</b></small>
+        </div>
+      </div>
+
+      <div class="row-btns">
+        <button class="ghost" id="autoBtn">▶ Tự gõ</button>
+        <button class="ghost" id="bellBtn">🔔 Thỉnh chuông</button>
+        <button class="ghost" id="soundBtn">🔊 Âm thanh</button>
+      </div>
+    </section>
+
+    <!-- THẮP HƯƠNG -->
+    <section class="panel" id="tab-huong" role="tabpanel">
+      <h2>Thắp hương dâng Phật</h2>
+      <p class="sub">Hương cháy theo thời gian thật. Khi hương tàn, hãy quay lại thắp nén mới.</p>
+      <div class="altar">
+        <div class="buddha" aria-hidden="true">
+          <svg viewBox="0 0 120 120">
+            <circle cx="60" cy="40" r="34" fill="url(#halo)" opacity=".8"/>
+            <defs><radialGradient id="halo"><stop offset="0" stop-color="#ffe7a3"/><stop offset="1" stop-color="#ffe7a3" stop-opacity="0"/></radialGradient></defs>
+            <circle cx="60" cy="36" r="14" fill="#d9a441"/>
+            <path d="M34 100 Q34 60 60 54 Q86 60 86 100Z" fill="#c98f2c"/>
+            <path d="M24 104 Q60 88 96 104 L96 112 L24 112Z" fill="#b57b22"/>
+            <circle cx="60" cy="24" r="5" fill="#a87521"/>
+          </svg>
+        </div>
+        <div class="bowl">
+          <div class="sticks" id="sticks"></div>
+          <div class="bowl-body">香</div>
+        </div>
+      </div>
+      <p class="status" id="incenseStatus">Chưa thắp hương.</p>
+      <div class="row-btns">
+        <button class="primary" data-sticks="1">1 nén</button>
+        <button class="primary" data-sticks="3">3 nén</button>
+        <button class="primary" data-sticks="5">5 nén</button>
+      </div>
+      <div class="wish-box">
+        <label for="prayer">Lời khấn (không bắt buộc)</label>
+        <textarea id="prayer" rows="2" maxlength="200" placeholder="Con xin cầu cho gia đình bình an..."></textarea>
+      </div>
+    </section>
+
+    <!-- XIN XĂM -->
+    <section class="panel" id="tab-xam" role="tabpanel">
+      <h2>Xin xăm đầu ngày</h2>
+      <p class="sub">Tịnh tâm, nghĩ điều mình hỏi rồi lắc ống xăm. Mỗi ngày một quẻ.</p>
+      <button class="tube" id="tubeBtn" aria-label="Lắc ống xăm">
+        <svg viewBox="0 0 120 200" aria-hidden="true">
+          <g class="tube-sticks">
+            <rect x="34" y="10" width="6" height="90" rx="2" fill="#d8b46a"/>
+            <rect x="44" y="4" width="6" height="96" rx="2" fill="#e2c07a"/>
+            <rect x="54" y="14" width="6" height="86" rx="2" fill="#d8b46a"/>
+            <rect x="64" y="2" width="6" height="98" rx="2" fill="#e2c07a"/>
+            <rect x="74" y="12" width="6" height="88" rx="2" fill="#d8b46a"/>
+            <rect x="84" y="8" width="6" height="92" rx="2" fill="#e2c07a"/>
+          </g>
+          <path d="M24 70 L96 70 L90 190 L30 190Z" fill="#8b2615"/>
+          <rect x="22" y="66" width="76" height="10" rx="3" fill="#c8932f"/>
+          <text x="60" y="140" text-anchor="middle" font-size="22" fill="#f2c14e" font-weight="700">籤</text>
+        </svg>
+      </button>
+      <div class="xam-card" id="xamCard" hidden>
+        <div class="xam-no" id="xamNo"></div>
+        <div class="xam-rank" id="xamRank"></div>
+        <blockquote id="xamPoem"></blockquote>
+        <p id="xamMeaning"></p>
+        <p class="xam-note">Quẻ chỉ để chiêm nghiệm, tự soi lại mình. Hãy sống thiện lành, chăm chỉ — phúc tự đến.</p>
+      </div>
+    </section>
+
+    <!-- HOA ĐĂNG -->
+    <section class="panel" id="tab-den" role="tabpanel">
+      <h2>Thả hoa đăng</h2>
+      <p class="sub">Gửi một lời nguyện theo dòng nước.</p>
+      <div class="lake" id="lake"></div>
+      <div class="wish-box">
+        <label for="wish">Lời nguyện</label>
+        <textarea id="wish" rows="2" maxlength="120" placeholder="Nguyện cho cha mẹ mạnh khỏe..."></textarea>
+        <button class="primary" id="releaseBtn">🪷 Thả đèn</button>
+      </div>
+      <ul class="wish-list" id="wishList"></ul>
+    </section>
+
+    <!-- SỔ CÔNG ĐỨC -->
+    <section class="panel" id="tab-so" role="tabpanel">
+      <h2>Sổ công đức</h2>
+      <div class="rank-card">
+        <div class="rank-title" id="rankTitle">Phật tử sơ cơ</div>
+        <div class="progress"><div id="rankBar"></div></div>
+        <small id="rankNext"></small>
+      </div>
+      <div class="stats">
+        <div><strong id="sMo">0</strong><span>Tiếng mõ</span></div>
+        <div><strong id="sMala">0</strong><span>Chuỗi 108</span></div>
+        <div><strong id="sHuong">0</strong><span>Nén hương</span></div>
+        <div><strong id="sDen">0</strong><span>Hoa đăng</span></div>
+        <div><strong id="sDays">0</strong><span>Ngày lên chùa</span></div>
+        <div><strong id="sStreak">0</strong><span>Chuỗi ngày liên tục</span></div>
+      </div>
+      <h3>7 ngày gần nhất</h3>
+      <div class="week" id="week"></div>
+      <button class="ghost danger" id="resetBtn">Xóa dữ liệu trên máy này</button>
+    </section>
+  </main>
+
+  <footer>Dữ liệu chỉ lưu trên trình duyệt của bạn · A Di Đà Phật 🙏</footer>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>
