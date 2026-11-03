@@ -52,6 +52,7 @@ export class GameUI {
     this.world.onNearest = (i) => { this.nearest = i; this.renderInteract(); };
     this.world.onMove = (x, z, ry, a) => { this.net?.move(x, z, ry, a); this.updateZone(x, z); };
     this.world.onPickPlayer = (id) => this.playerCard(id);
+    if (import.meta.env.VITE_DEMO) (window as any).__pos = () => [this.world.pos.x, this.world.pos.z];
     this.buildHud();
     this.els.zone.textContent = c.temple.name;
     this.updateZone(c.pos.x, c.pos.z);

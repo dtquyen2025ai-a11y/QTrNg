@@ -11,6 +11,7 @@
     "dev:server": "node --env-file-if-exists=.env --watch server/src/index.ts",
     "dev:client": "vite",
     "build": "vite build",
+    "build:demo": "VITE_DEMO=1 vite build -c vite.demo.config.ts",
     "start": "NODE_ENV=production node --env-file-if-exists=.env server/src/index.ts",
     "migrate": "node --env-file-if-exists=.env server/src/migrate.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p client/tsconfig.json",

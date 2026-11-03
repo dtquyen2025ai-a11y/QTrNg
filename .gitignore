@@ -4,3 +4,4 @@ dist/
 backups/
 *.log
 test-results/
+dist-demo/

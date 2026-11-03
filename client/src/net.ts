@@ -16,11 +16,23 @@ export class Net {
     if (!this.handlers.has(t)) this.handlers.set(t, []);
     this.handlers.get(t)!.push(fn);
   }
-  private emit(m: any) { for (const fn of this.handlers.get(m.t) || []) fn(m); }
+  emit(m: any) { for (const fn of this.handlers.get(m.t) || []) fn(m); }
   private setStatus(s: Net['status']) { this.status = s; this.onStatus?.(s); }
 
+  private demo: typeof import('./demo/server.ts') | null = null;
   connect() {
     this.closedByUser = false;
+    if (import.meta.env.VITE_DEMO) {
+      import('./demo/server.ts').then((d) => {
+        this.demo = d;
+        d.setDemoUser(this.token);
+        d.setFxHook((kind) => this.emit({ t: 'fx', id: this.charId, kind }));
+        this.setStatus('online');
+        this.emit(d.welcome());
+        d.startCeremonyLoop((m) => this.emit(m));
+      });
+      return;
+    }
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(this.token)}&char=${this.charId}`);
     this.ws = ws;
@@ -34,8 +46,18 @@ export class Net {
       setTimeout(() => { if (!this.closedByUser) this.connect(); }, wait);
     };
   }
-  close() { this.closedByUser = true; this.ws?.close(); }
-  send(m: unknown) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify(m)); }
+  close() { this.closedByUser = true; this.ws?.close(); this.demo?.setFxHook(null); }
+  send(m: any) {
+    if (this.demo) {
+      if (m.t === 'move') { const st = this.demo.onMove(m.x, m.z); if (st) this.emit({ t: 'stamp', ...st }); }
+      else if (m.t === 'chat') {
+        if (m.to) this.emit({ t: 'toast', text: 'Bản dùng thử offline chỉ có một người chơi.' });
+        else this.emit(this.demo.chatEcho(String(m.body || '')));
+      }
+      return;
+    }
+    if (this.ws?.readyState === 1) this.ws.send(JSON.stringify(m));
+  }
 
   /** Gửi vị trí tối đa 10 lần/giây */
   move(x: number, z: number, ry: number, a: string) {

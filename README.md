@@ -30,6 +30,14 @@ Sau đó mở:
 
 Mẹo: thêm `?gio=21` vào URL để xem cảnh ban đêm (chỉ đổi hiển thị trên máy bạn).
 
+## Bản dùng thử offline
+
+```bash
+npm run build:demo           # ra dist-demo/: một trang chạy hoàn toàn trên trình duyệt, không cần máy chủ
+```
+
+Bản này dùng máy chủ giả lập trong trình duyệt (`client/src/demo/server.ts`) theo cùng luật thưởng, chỉ có một người chơi, dữ liệu lưu trên máy. Bản build thường không chứa phần này.
+
 ## Chạy production
 
 ```bash

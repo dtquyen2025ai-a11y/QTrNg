@@ -31,6 +31,19 @@ let onUnauthorized: (() => void) | null = null;
 export function handleUnauthorized(fn: () => void) { onUnauthorized = fn; }
 
 export async function api<T = any>(path: string, body?: unknown, method?: string): Promise<T> {
+  if (import.meta.env.VITE_DEMO) {
+    // Bản dùng thử offline: máy chủ giả lập trong trình duyệt
+    const d = await import('./demo/server.ts');
+    if (!path.startsWith('/auth/')) d.setDemoUser(token);
+    try { return await d.demoApi(method || (body !== undefined ? 'POST' : 'GET'), path, body); }
+    catch (e: any) {
+      if (e instanceof d.DemoError) {
+        if (e.status === 401 && onUnauthorized && !path.startsWith('/auth/')) onUnauthorized();
+        throw new ApiError(e.status, e.message, e.code);
+      }
+      throw e;
+    }
+  }
   let r: Response;
   try {
     r = await fetch('/api' + path, {

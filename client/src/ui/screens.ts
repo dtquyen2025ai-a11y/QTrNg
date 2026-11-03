@@ -51,7 +51,8 @@ export function authScreen(existing: Session | null): Promise<Session> {
       user.focus();
     };
     const cont = existing ? h('button', { class: 'btn gold big-btn', onclick: () => resolve(existing) }, `Tiếp tục với tài khoản ${existing.user.username}`) : null;
-    screen(h('div', { class: 'card' }, brand('Chùa trực tuyến · tu tập cùng đạo hữu'), cont, tabs, body,
+    const demoNote = import.meta.env.VITE_DEMO ? h('div', { class: 'note' }, 'Bản dùng thử offline: chạy hoàn toàn trên trình duyệt của bạn, chỉ có một người chơi, tài khoản và tiến trình lưu trên máy này. Bản thật có máy chủ và nhiều người chơi cùng lúc.') : null;
+    screen(h('div', { class: 'card' }, brand('Chùa trực tuyến · tu tập cùng đạo hữu'), demoNote, cont, tabs, body,
       h('p', { class: 'muted', style: { margin: 0, fontSize: '12px', textAlign: 'center' } }, 'Công đức trong game là điểm ghi nhận hoạt động, không mang giá trị tâm linh thực tế.')));
     render();
   });
