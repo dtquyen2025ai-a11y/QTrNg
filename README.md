@@ -7,6 +7,7 @@ Game web 3D mô phỏng không gian chùa Việt, chơi trên trình duyệt má
 - Thiết kế: [docs/GDD.md](docs/GDD.md)
 - Kiến trúc, database, công nghệ: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Tiến độ & việc còn lại: [docs/PROGRESS.md](docs/PROGRESS.md)
+- Deploy (Render hoặc VPS + Docker): [docs/DEPLOY.md](docs/DEPLOY.md)
 
 ## Chạy trên máy
 
