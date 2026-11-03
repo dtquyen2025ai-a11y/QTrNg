@@ -170,7 +170,7 @@ export function ceremonyLineAt(elapsedMs: number, durationMs: number): number {
 }
 
 // ---------- Bồ đoàn: phải ngồi/quỳ rồi mới hành lễ ----------
-export type SeatKind = 'sit' | 'kneel';
+export type SeatKind = 'place';   // "Vào chỗ" trên bồ đoàn
 export interface Mat { id: string; group: 'hall' | 'meditation' | 'chanting'; x: number; z: number; faceX: number; faceZ: number }
 
 /** Vị trí bồ đoàn, khớp với mô hình 3D (client/src/world/temple.ts) */
@@ -189,10 +189,10 @@ export const MAT_REACH = 1.8;     // khoảng cách tối đa để ngồi xuố
 
 /** Tư thế bắt buộc cho từng nghi lễ */
 export const POSE_RULES: Record<string, { poses: SeatKind[]; groups: Mat['group'][]; hint: string }> = {
-  prostrate: { poses: ['kneel'], groups: ['hall'], hint: 'Hãy đến bồ đoàn trong Chánh điện và chọn "Quỳ xuống" để lạy Phật.' },
-  meditate: { poses: ['sit'], groups: ['hall', 'meditation'], hint: 'Hãy chọn "Ngồi xuống" trên bồ đoàn ở Rừng trúc thiền hoặc Chánh điện để thiền.' },
-  chant: { poses: ['sit', 'kneel'], groups: ['hall', 'chanting'], hint: 'Hãy ngồi hoặc quỳ trên bồ đoàn ở Giảng đường hoặc Chánh điện để tụng kinh.' },
-  ceremony: { poses: ['sit', 'kneel'], groups: ['hall'], hint: 'Hãy ngồi hoặc quỳ trên bồ đoàn trong Chánh điện để được ghi nhận.' },
+  prostrate: { poses: ['place'], groups: ['hall'], hint: 'Hãy đến bồ đoàn trong Chánh điện và bấm "Vào chỗ" để lạy Phật.' },
+  meditate: { poses: ['place'], groups: ['hall', 'meditation'], hint: 'Hãy đến bồ đoàn ở Rừng trúc thiền hoặc Chánh điện và bấm "Vào chỗ" để thiền.' },
+  chant: { poses: ['place'], groups: ['hall', 'chanting'], hint: 'Hãy đến bồ đoàn ở Giảng đường hoặc Chánh điện và bấm "Vào chỗ" để tụng kinh.' },
+  ceremony: { poses: ['place'], groups: ['hall'], hint: 'Hãy đến bồ đoàn trong Chánh điện và bấm "Vào chỗ" để được ghi nhận.' },
 };
 export function poseAllows(rule: string, seat: { kind: SeatKind; mat: string } | null | undefined): boolean {
   const r = POSE_RULES[rule];

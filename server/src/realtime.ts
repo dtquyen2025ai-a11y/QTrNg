@@ -11,9 +11,9 @@ import { MAX_SPEED, WORLD_BOUND, filterText, zoneAt, MATS, MAT_REACH, type Zone 
 
 const TICK_MS = 100;
 const SAVE_MS = 10_000;
-const ANIMS = new Set(['idle', 'walk', 'run', 'prostrate', 'meditate', 'chant', 'bead', 'offer', 'bell', 'sit', 'kneel']);
+const ANIMS = new Set(['idle', 'walk', 'run', 'prostrate', 'meditate', 'chant', 'bead', 'offer', 'bell', 'place']);
 // Hoạt ảnh chỉ hợp lệ khi đang ngồi/quỳ trên bồ đoàn
-const SEATED_ANIMS = new Set(['sit', 'kneel', 'prostrate', 'meditate', 'chant', 'bead']);
+const SEATED_ANIMS = new Set(['place', 'prostrate', 'meditate', 'chant', 'bead']);
 
 const templeZones = new Map<number, Zone[]>();
 async function zonesOf(templeId: number): Promise<Zone[]> {
@@ -166,13 +166,13 @@ async function handle(p: Player, m: any) {
   }
 }
 
-/** Ngồi / quỳ trên bồ đoàn, hoặc đứng dậy (kind = null) */
+/** Vào chỗ trên bồ đoàn (kind = 'place'), hoặc rời chỗ (kind = null) */
 function pose(p: Player, m: any) {
   if (m.kind == null) {
     p.seat = null; p.anim = 'idle'; p.dirty = true;
     return send(p, { t: 'pose_ok', kind: null });
   }
-  if (m.kind !== 'sit' && m.kind !== 'kneel') return;
+  if (m.kind !== 'place') return;
   const mat = MATS.find((x) => x.id === m.mat);
   if (!mat) return send(p, { t: 'toast', text: 'Bồ đoàn không hợp lệ.' });
   if (Math.hypot(p.x - mat.x, p.z - mat.z) > MAT_REACH) return send(p, { t: 'toast', text: 'Hãy đến gần bồ đoàn hơn.' });

@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { buildTemple, type TempleRefs } from './temple.ts';
 import { Avatar, type LookData, type ItemData } from './character.ts';
-import { THEMES, colliders, resolve, INTERACTABLES, LAKE, type Interactable } from './layout.ts';
+import { THEMES, colliders, resolve, INTERACTABLES, LAKE, groundHeight, setMatsForGround, type Interactable } from './layout.ts';
 import { MATS, type Mat, type SeatKind } from '../../../shared/content.ts';
 
 export interface RemoteInfo { id: number; name: string; level: number; title: string | null; look: LookData; x: number; z: number; ry: number; anim: string }
@@ -115,6 +115,7 @@ export class World {
     this.hallLight.position.set(0, 4, -17);
     this.scene.add(this.hallLight);
 
+    setMatsForGround(MATS);
     this.refs = buildTemple(theme, templeName);
     this.scene.add(this.refs.group);
     this.refs.group.add(this.sticks);
@@ -133,7 +134,7 @@ export class World {
     // Nhân vật của mình
     this.me = new Avatar(myInfo.look, items);
     this.me.setLabel(myInfo.name, myInfo.level, myInfo.title, true);
-    this.pos.set(myInfo.x, 0, myInfo.z);
+    this.pos.set(myInfo.x, groundHeight(myInfo.x, myInfo.z), myInfo.z);
     this.ry = myInfo.ry;
     this.me.root.position.copy(this.pos);
     this.scene.add(this.me.root);
@@ -222,7 +223,7 @@ export class World {
     if (this.remotes.has(info.id)) this.removeRemote(info.id);
     const avatar = new Avatar(info.look, this.items);
     avatar.setLabel(info.name, info.level, info.title);
-    avatar.root.position.set(info.x, 0, info.z);
+    avatar.root.position.set(info.x, groundHeight(info.x, info.z), info.z);
     avatar.root.rotation.y = info.ry;
     avatar.setAnim(info.anim);
     this.scene.add(avatar.root);
@@ -232,7 +233,7 @@ export class World {
   private matTaken(id: string) {
     const m = MATS.find((x) => x.id === id)!;
     for (const r of this.remotes.values()) {
-      if (['sit', 'kneel', 'prostrate', 'meditate', 'chant'].includes(r.info.anim) && Math.hypot(r.tx - m.x, r.tz - m.z) < 0.3) return true;
+      if (['place', 'prostrate', 'meditate', 'chant'].includes(r.info.anim) && Math.hypot(r.tx - m.x, r.tz - m.z) < 0.3) return true;
     }
     return false;
   }
@@ -253,14 +254,14 @@ export class World {
   setMyLabel(name: string, level: number, title: string | null) { this.me.setLabel(name, level, title, true); }
 
   /** Server kéo về vị trí hợp lệ */
-  correct(x: number, z: number) { this.pos.set(x, 0, z); }
+  correct(x: number, z: number) { this.pos.set(x, groundHeight(x, z), z); }
 
   // ---------- Hoạt ảnh của mình ----------
   /** Server xác nhận ngồi/quỳ (kind = null: đứng dậy) */
   applySeat(kind: SeatKind | null, mat?: string, x?: number, z?: number, ry?: number) {
     if (kind && mat) {
       this.seat = { kind, mat };
-      if (x != null && z != null) this.pos.set(x, 0, z);
+      if (x != null && z != null) this.pos.set(x, groundHeight(x, z), z);
       if (ry != null) this.ry = ry;
     } else this.seat = null;
     this.activityPose = null; this.oneShotUntil = 0;
@@ -341,6 +342,7 @@ export class World {
       const k = Math.min(1, dt * 10);
       const dx = r.tx - p.x, dz = r.tz - p.z;
       p.x += dx * k; p.z += dz * k;
+      p.y += (groundHeight(p.x, p.z) - p.y) * Math.min(1, dt * 12);
       let dr = r.tr - r.avatar.root.rotation.y; dr = Math.atan2(Math.sin(dr), Math.cos(dr));
       r.avatar.root.rotation.y += dr * k;
       r.avatar.update(dt);
@@ -393,6 +395,8 @@ export class World {
       this.anim = 'idle'; this.me.setAnim('idle');
       this.onMove(this.pos.x, this.pos.z, this.ry, 'idle');
     }
+    // Đứng đúng trên mặt sàn (bệ chánh điện, bậc thềm, bồ đoàn...), lên xuống mượt
+    this.pos.y += (groundHeight(this.pos.x, this.pos.z) - this.pos.y) * Math.min(1, dt * 12);
     this.me.root.position.copy(this.pos);
     this.me.root.rotation.y = this.ry;
     // bồ đoàn gần nhất (khi đang đứng)
@@ -416,7 +420,7 @@ export class World {
 
   private camPos = new THREE.Vector3();
   private updateCamera() {
-    const target = new THREE.Vector3(this.pos.x, 1.5, this.pos.z);
+    const target = new THREE.Vector3(this.pos.x, 1.5 + this.pos.y, this.pos.z);
     const off = new THREE.Vector3(Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), Math.cos(this.yaw) * Math.cos(this.pitch)).multiplyScalar(this.dist);
     const want = target.clone().add(off);
     want.y = Math.max(0.6, want.y);

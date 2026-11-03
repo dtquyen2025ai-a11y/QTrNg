@@ -76,11 +76,11 @@ Trạng thái: ✅ có trong MVP · 🟡 có một phần · ⏳ kế hoạch gi
 ### 2.4 Gameplay tu tập
 | Hoạt động | Trạng thái | Nơi thực hiện |
 |---|---|---|
-| **Ngồi xuống / Quỳ xuống** trên bồ đoàn (32 bồ đoàn; server giữ chỗ, đi khỏi thì tự đứng dậy) | ✅ | Chánh điện, Rừng trúc thiền, Giảng đường |
-| Lạy Phật (cúi rạp từ tư thế quỳ) | ✅ | **Quỳ** trên bồ đoàn trong Chánh điện |
+| **Vào chỗ** trên bồ đoàn (32 bồ đoàn; server giữ chỗ, đi khỏi thì tự rời chỗ; nhân vật đứng thẳng, không hạ thấp) | ✅ | Chánh điện, Rừng trúc thiền, Giảng đường |
+| Lạy Phật (cúi người tới trước) | ✅ | **Vào chỗ** trên bồ đoàn trong Chánh điện |
 | Lần tràng hạt 108 | ✅ | Mọi nơi |
-| Thiền định (5/10/15/30 phút, nhịp thở) | ✅ | **Ngồi** trên bồ đoàn ở khu thiền hoặc Chánh điện |
-| Tụng kinh (đọc theo dòng, đếm tiến trình) | ✅ | **Ngồi hoặc quỳ** trên bồ đoàn ở Giảng đường hoặc Chánh điện |
+| Thiền định (5/10/15/30 phút, nhịp thở) | ✅ | **Vào chỗ** trên bồ đoàn ở khu thiền hoặc Chánh điện |
+| Tụng kinh (đọc theo dòng, đếm tiến trình) | ✅ | **Vào chỗ** trên bồ đoàn ở Giảng đường hoặc Chánh điện |
 | Thắp hương, thắp nến, dâng hoa | ✅ | Lư hương, bàn thờ |
 | Thỉnh chuông | ✅ | Gác chuông |
 | Thả hoa đăng (mọi người cùng thấy) | ✅ | Hồ hoa đăng |
@@ -108,7 +108,7 @@ Trạng thái: ✅ có trong MVP · 🟡 có một phần · ⏳ kế hoạch gi
 | Kết bạn, lời mời, danh sách bạn, tìm người chơi | ✅ |
 | Tặng quà (Sen hoặc vật phẩm) | ✅ |
 | Hoạt động tập thể: **Cộng tu** (≥3 người cùng tu trong 60 giây thì +20% công đức) | ✅ |
-| **Đại lễ cộng tu** 6:00 và 20:00 giờ VN (ngày Rằm/mùng Một thêm 12:00, công đức x2): cả máy chủ tụng đồng bộ Tâm Kinh, niệm hồng danh, hồi hướng; cần có mặt ở Chánh điện ≥ 80% thời gian; +2% mỗi người dự (tối đa +40%) | ✅ |
+| **Đại lễ cộng tu** 6:00 và 20:00 giờ VN (ngày Rằm/mùng Một thêm 12:00, công đức x2): cả máy chủ tụng đồng bộ Tâm Kinh, niệm hồng danh, hồi hướng; cần vào chỗ trên bồ đoàn ở Chánh điện ≥ 80% thời gian; +2% mỗi người dự (tối đa +40%) | ✅ |
 | Bảng xếp hạng (công đức, cấp, thời gian thiền) | ✅ |
 | Chặn, báo cáo, lọc từ cấm, chống spam | ✅ |
 

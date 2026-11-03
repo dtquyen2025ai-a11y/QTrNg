@@ -65,7 +65,7 @@ try {
   // Lạy Phật ngoài chánh điện -> bị từ chối với lý do rõ ràng
   await A.page.keyboard.press('Digit1');
   await A.page.waitForSelector('.toast.bad', { timeout: 30000 });
-  check('Chưa quỳ trên bồ đoàn thì không lạy Phật được', (await A.page.textContent('.toast.bad')).includes('Quỳ xuống'));
+  check('Chưa vào chỗ trên bồ đoàn thì không lạy Phật được', (await A.page.textContent('.toast.bad')).includes('Vào chỗ'));
 
   // Đi vào chánh điện bằng bàn phím
   await A.page.locator('canvas').first().click({ position: { x: 640, y: 300 } });
@@ -73,26 +73,26 @@ try {
   // Giữ phím W cho tới khi tới bồ đoàn trong chánh điện (máy kiểm thử render chậm nên không đi theo thời gian cố định)
   for (let i = 0; i < 120; i++) {
     await A.page.waitForTimeout(1000);
-    if ((await A.page.textContent('.interact')).includes('Quỳ xuống') && /Chánh điện|Đại hùng/.test(await A.page.textContent('.zone-name'))) break;
+    if ((await A.page.textContent('.interact')).includes('Vào chỗ') && /Chánh điện|Đại hùng/.test(await A.page.textContent('.zone-name'))) break;
   }
   await A.page.keyboard.up('KeyW'); await A.page.keyboard.up('ShiftLeft');
   await A.page.waitForTimeout(600);
   const zone = await A.page.textContent('.zone-name');
   check('Di chuyển tới Chánh điện', zone.includes('Chánh điện') || zone.includes('Đại hùng'), zone);
   await A.page.screenshot({ path: `${OUT}/02-chanh-dien.png` });
-  await A.page.getByRole('button', { name: /Quỳ xuống/ }).click();
-  await A.page.waitForSelector('.seat-hint:has-text("Đang quỳ")');
-  check('Đến bồ đoàn: chọn Quỳ xuống', true);
+  await A.page.getByRole('button', { name: /Vào chỗ/ }).click();
+  await A.page.waitForSelector('.seat-hint:has-text("Đã vào chỗ")');
+  check('Đến bồ đoàn: bấm Vào chỗ', true);
   await A.page.keyboard.press('Digit1');
   await A.page.waitForSelector('.toast.good', { timeout: 30000 });
   const t = await A.page.textContent('.toast.good');
-  check('Quỳ trên bồ đoàn rồi lạy Phật được cộng công đức', t.includes('công đức'), t);
+  check('Vào chỗ rồi lạy Phật được cộng công đức', t.includes('công đức'), t);
   await A.page.waitForTimeout(900);
   await A.page.screenshot({ path: `${OUT}/03-lay-phat.png` });
 
   await A.page.keyboard.press('KeyE');
-  await A.page.waitForSelector('.interact:has-text("Ngồi xuống")');
-  check('Đứng dậy khỏi bồ đoàn', true);
+  await A.page.waitForSelector('.interact:has-text("Vào chỗ")');
+  check('Rời chỗ khỏi bồ đoàn', true);
   // Người chơi B (điện thoại)
   const B = await newPlayer(browser, 'e2eb' + stamp, 'Diệu Hạnh ' + Tag, { width: 390, height: 844 });
   await B.page.waitForTimeout(1500);
@@ -179,17 +179,17 @@ try {
   await np.keyboard.press('KeyL');
   await np.waitForSelector('.drawer h2:has-text("Đại lễ đang diễn ra")');
   await np.keyboard.press('Escape');
-  await np.waitForSelector('.interact:has-text("Quỳ xuống")');
-  await np.keyboard.press('KeyQ');
-  await np.waitForSelector('.seat-hint:has-text("Đang quỳ")');
+  await np.waitForSelector('.interact:has-text("Vào chỗ")');
+  await np.keyboard.press('KeyE');
+  await np.waitForSelector('.seat-hint:has-text("Đã vào chỗ")');
   await np.keyboard.press('KeyL');
   await np.waitForSelector('.drawer h2:has-text("Đại lễ đang diễn ra")');
-  await np.getByRole('button', { name: 'Ngồi tụng cùng đại chúng' }).click();
+  await np.getByRole('button', { name: 'Tụng cùng đại chúng' }).click();
   await np.waitForTimeout(4000);
   await np.screenshot({ path: `${OUT}/14-dai-le.png` });
   const waitMs = (cer.current ? cer.current.endAt - cer.serverNow : 300000) + 60000;
   const got = await np.waitForSelector('.toast:has-text("Viên mãn đại lễ")', { timeout: waitMs }).then(() => true).catch(() => false);
-  check('Quỳ trên bồ đoàn dự trọn đại lễ và nhận thưởng', got);
+  check('Vào chỗ trong Chánh điện, dự trọn đại lễ và nhận thưởng', got);
 
   for (const [who, p] of [['A', A], ['B', B]]) check(`Không có lỗi JavaScript (${who})`, p.errors.length === 0, p.errors.slice(0, 3).join(' | '));
   const hScroll = await B.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);

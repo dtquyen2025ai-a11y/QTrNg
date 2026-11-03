@@ -126,3 +126,21 @@ export const INTERACTABLES: Interactable[] = [
   { id: 'chant', label: 'Tụng kinh', x: CHANT_HALL.cx, z: CHANT_HALL.cz, r: 5.5, action: 'panel', code: 'chant' },
   { id: 'stele', label: 'Đọc bia', x: -4.5, z: 30, r: 2.2, action: 'panel', code: 'stele' },
 ];
+
+// ---------- Độ cao mặt sàn (nhân vật đứng đúng trên bệ, bậc thềm, bồ đoàn) ----------
+const MAT_TOP: Record<string, number> = { hall: 0.78, meditation: 0.18, chanting: 0.655 };
+const MAT_RADIUS = 0.45;
+let matsCache: { x: number; z: number; top: number }[] | null = null;
+export function setMatsForGround(mats: { x: number; z: number; group: string }[]) {
+  matsCache = mats.map((m) => ({ x: m.x, z: m.z, top: MAT_TOP[m.group] ?? 0 }));
+}
+export function groundHeight(x: number, z: number): number {
+  if (matsCache) for (const m of matsCache) if ((x - m.x) ** 2 + (z - m.z) ** 2 <= MAT_RADIUS * MAT_RADIUS) return m.top;
+  const hx0 = HALL.cx - HALL.w / 2 - 1.5, hx1 = HALL.cx + HALL.w / 2 + 1.5, hz0 = HALL.cz + 1 - HALL.d / 2 - 2, hz1 = HALL.cz + 1 + HALL.d / 2 + 2;
+  if (x >= hx0 && x <= hx1 && z >= hz0 && z <= hz1) return 0.62;                               // bệ + sàn Chánh điện
+  if (Math.abs(x - HALL.cx) <= HALL.doorW / 2 + 1 && z > hz1 && z <= hz1 + 1.2) return 0.3;      // bậc thềm
+  const c = CHANT_HALL;
+  if (Math.abs(x - c.cx) <= c.w / 2 + 0.7 && Math.abs(z - c.cz) <= c.d / 2 + 0.7) return 0.5;    // nền Giảng đường
+  if (Math.abs(x - BELL.x) <= 2.3 && Math.abs(z - BELL.z) <= 2.3) return 0.4;                    // nền gác chuông
+  return 0;
+}

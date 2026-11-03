@@ -58,7 +58,7 @@ export class GameUI {
     this.world.onBlockedMove = () => {
       if (Date.now() - this.lastBlockedHint < 4000) return;
       this.lastBlockedHint = Date.now();
-      toast(this.session ? 'Đang hành lễ. Kết thúc buổi lễ trước khi đứng dậy.' : 'Bạn đang ngồi trên bồ đoàn. Bấm E hoặc nút "Đứng dậy" để đi lại.');
+      toast(this.session ? 'Đang hành lễ. Kết thúc buổi lễ trước khi rời chỗ.' : 'Bạn đang ở chỗ trên bồ đoàn. Bấm E hoặc nút "Rời chỗ" để đi lại.');
     };
     if (import.meta.env.VITE_DEMO) (window as any).__pos = () => [this.world.pos.x, this.world.pos.z];
     this.buildHud();
@@ -106,7 +106,7 @@ export class GameUI {
     net.on('correct', (m) => this.world.correct(m.x, m.z));
     net.on('pose_ok', (m) => {
       this.world.applySeat(m.kind, m.mat, m.x, m.z, m.ry);
-      // Đứng dậy giữa chừng thì kết thúc buổi thiền / tụng kinh
+      // Rời chỗ giữa chừng thì kết thúc buổi thiền / tụng kinh
       if (!m.kind && this.session?.kind === 'meditate') this.finishMeditation();
       if (!m.kind && this.session?.kind === 'chant') this.endChant();
       if (!m.kind && this.cerChanting) this.cerChanting = false;
@@ -208,7 +208,7 @@ export class GameUI {
     const map: Record<string, () => void> = {
       Digit1: () => this.doAct('prostrate'), Digit2: () => this.openDrawer('beads'), Digit3: () => this.openDrawer('meditate'), Digit4: () => this.openDrawer('chant'),
       KeyJ: () => this.openDrawer('missions'), KeyC: () => this.openDrawer('profile'), KeyB: () => this.openDrawer('shop'), KeyF: () => this.openDrawer('community'),
-      KeyM: () => this.openDrawer('pilgrimage'), KeyL: () => this.openDrawer('ceremony'), KeyQ: () => this.seatDown('kneel'), KeyE: () => this.interact(), Enter: () => (this.els.chatInput as HTMLInputElement).focus(),
+      KeyM: () => this.openDrawer('pilgrimage'), KeyL: () => this.openDrawer('ceremony'), KeyE: () => this.interact(), Enter: () => (this.els.chatInput as HTMLInputElement).focus(),
       Escape: () => (this.drawer ? this.closeDrawer() : this.openDrawer('menu')),
       Space: () => { if (this.drawerName === 'beads') this.tapBead(); },
     };
@@ -284,18 +284,18 @@ export class GameUI {
     if (seat) {
       // Đang ngồi/quỳ: gợi ý nghi lễ làm được ở tư thế này
       const can = [['prostrate', '1 Lạy Phật'], ['meditate', '3 Thiền'], ['chant', '4 Tụng kinh']].filter(([r]) => poseAllows(r, seat)).map(([, l]) => l);
-      b.append(h('span', { class: 'seat-hint' }, `${seat.kind === 'kneel' ? 'Đang quỳ' : 'Đang ngồi'}${can.length ? ' · ' + can.join(' · ') : ''}`),
-        btn('E', 'Đứng dậy', () => this.standUp(), 'ghost'));
+      b.append(h('span', { class: 'seat-hint' }, `Đã vào chỗ${can.length ? ' · ' + can.join(' · ') : ''}`),
+        btn('E', 'Rời chỗ', () => this.standUp(), 'ghost'));
     } else if (this.nearMat && !this.world.locked) {
-      b.append(h('span', { class: 'seat-hint' }, 'Bồ đoàn'), btn('E', 'Ngồi xuống', () => this.seatDown('sit')), btn('Q', 'Quỳ xuống', () => this.seatDown('kneel')));
+      b.append(h('span', { class: 'seat-hint' }, 'Bồ đoàn'), btn('E', 'Vào chỗ', () => this.seatDown()));
     } else if (it && !this.world?.locked) {
       b.append(btn('E', it.label, () => this.interact()));
     }
     b.classList.toggle('hidden', !b.childElementCount);
   }
-  private seatDown(kind: SeatKind) {
+  private seatDown() {
     if (!this.nearMat || this.world.seat) return;
-    this.net.send({ t: 'pose', kind, mat: this.nearMat.id });
+    this.net.send({ t: 'pose', kind: 'place' as SeatKind, mat: this.nearMat.id });
   }
   private standUp() {
     if (this.session) return toast(this.session.kind === 'meditate' ? 'Bấm "Xả thiền" để kết thúc buổi thiền trước.' : 'Bấm "Dừng" để kết thúc thời kinh trước.');
@@ -411,7 +411,7 @@ export class GameUI {
   async doAct(code: string) {
     if (this.session) return toast('Hãy kết thúc hoạt động hiện tại trước.');
     if (POSE_RULES[code] && !poseAllows(code, this.world.seat)) return toast(POSE_RULES[code].hint, 'bad');
-    if (!POSE_RULES[code] && this.world.seat) return toast('Hãy đứng dậy trước (phím E).');
+    if (!POSE_RULES[code] && this.world.seat) return toast('Hãy rời chỗ trước (phím E).');
     if (this.outcomeBusy) return;
     const target = ACT_TARGET[code];
     if (target && !this.world.seat) this.world.faceTowards(target[0], target[1]);
@@ -440,7 +440,7 @@ export class GameUI {
 
   private interact() {
     if (this.world.seat) return this.standUp();
-    if (this.nearMat && !this.world.locked) return this.seatDown('sit');
+    if (this.nearMat && !this.world.locked) return this.seatDown();
     const it = this.nearest;
     if (!it || this.world.locked) return;
     if (it.action === 'act') this.doAct(it.code);
@@ -569,7 +569,7 @@ export class GameUI {
       const draw = () => { clear(chips); for (const m of MEDITATION_OPTIONS) chips.appendChild(h('button', { class: 'chip', 'aria-pressed': String(m === minutes), onclick: () => { minutes = m; draw(); } }, `${m} phút`)); };
       draw();
       return h('div', { class: 'list' },
-        h('p', { class: 'muted', style: { margin: 0 } }, 'Đến bồ đoàn ở Rừng trúc thiền hoặc trong Chánh điện, chọn "Ngồi xuống" rồi bắt đầu. Thời gian được đo trên máy chủ.'),
+        h('p', { class: 'muted', style: { margin: 0 } }, 'Đến bồ đoàn ở Rừng trúc thiền hoặc trong Chánh điện, bấm "Vào chỗ" rồi bắt đầu. Thời gian được đo trên máy chủ.'),
         h('div', { class: 'section-title' }, 'Thời lượng'), chips,
         h('button', { class: 'btn gold big-btn', onclick: async () => {
           try {
@@ -620,7 +620,7 @@ export class GameUI {
   private chantPanel() {
     if (this.session?.kind === 'chant') return;
     this.shell('Tụng kinh', null, () => h('div', { class: 'list' },
-      h('p', { class: 'muted', style: { margin: 0 } }, 'Ngồi hoặc quỳ trên bồ đoàn ở Giảng đường hoặc Chánh điện rồi chọn bài. Mỗi dòng được đánh dấu theo nhịp đọc; hoàn tất khi đọc trọn bài.'),
+      h('p', { class: 'muted', style: { margin: 0 } }, 'Vào chỗ trên bồ đoàn ở Giảng đường hoặc Chánh điện rồi chọn bài. Mỗi dòng được đánh dấu theo nhịp đọc; hoàn tất khi đọc trọn bài.'),
       SUTRAS.map((s) => h('div', { class: 'item' },
         h('div', { class: 'title' }, s.name),
         h('div', { class: 'desc' }, `${s.lines.length} dòng · tối thiểu ${s.minSeconds} giây · ${s.note}`),
@@ -738,9 +738,9 @@ export class GameUI {
           ps[Math.min(idx, ps.length - 1)]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
         }
         const inHall = this.zone?.code === 'main_hall' && poseAllows('ceremony', this.world.seat);
-        status.textContent = `${inHall ? 'Bạn đang ngồi trên bồ đoàn trong Chánh điện, đang được ghi nhận.' : 'Chưa được ghi nhận: hãy vào Chánh điện, ngồi hoặc quỳ trên bồ đoàn.'} · ${this.cerPresent} đạo hữu trong Chánh điện · còn ${this.dur(cur.endAt - now)}${cur.mult > 1 ? ' · công đức x' + cur.mult : ''}`;
+        status.textContent = `${inHall ? 'Bạn đã vào chỗ trong Chánh điện, đang được ghi nhận.' : 'Chưa được ghi nhận: hãy đến bồ đoàn trong Chánh điện và bấm "Vào chỗ".'} · ${this.cerPresent} đạo hữu trong Chánh điện · còn ${this.dur(cur.endAt - now)}${cur.mult > 1 ? ' · công đức x' + cur.mult : ''}`;
         status.style.borderLeftColor = inHall ? 'var(--ok)' : 'var(--danger)';
-        sit.textContent = this.cerChanting ? 'Đứng dậy' : 'Ngồi tụng cùng đại chúng';
+        sit.textContent = this.cerChanting ? 'Ngừng tụng' : 'Tụng cùng đại chúng';
       };
       this.lastCerLine = -1;
       const t = window.setInterval(() => { if (this.drawerName !== 'ceremony') return clearInterval(t); paint(); }, 400);
@@ -1048,7 +1048,7 @@ export class GameUI {
       h('div', { class: 'section-title' }, 'Điều khiển'),
       h('table', { class: 'simple' }, h('tbody', null, [
         ['W A S D / mũi tên', 'Di chuyển (giữ Shift để đi nhanh)'], ['Kéo chuột', 'Xoay camera'], ['Cuộn chuột', 'Phóng to / thu nhỏ'], ['E', 'Tương tác'],
-        ['E / Q', 'Ngồi xuống / Quỳ xuống trên bồ đoàn (E lần nữa để đứng dậy)'], ['1 2 3 4', 'Lạy Phật (khi quỳ) · Tràng hạt · Thiền (khi ngồi) · Tụng kinh'], ['L', 'Đại lễ cộng tu'], ['Space', 'Lần hạt khi mở tràng hạt'], ['Enter', 'Chat'], ['J C B F M', 'Nhiệm vụ · Hồ sơ · Cửa hàng · Cộng đồng · Hành hương'],
+        ['E', 'Vào chỗ trên bồ đoàn / Rời chỗ'], ['1 2 3 4', 'Lạy Phật · Tràng hạt · Thiền · Tụng kinh (lạy, thiền, tụng cần vào chỗ trước)'], ['L', 'Đại lễ cộng tu'], ['Space', 'Lần hạt khi mở tràng hạt'], ['Enter', 'Chat'], ['J C B F M', 'Nhiệm vụ · Hồ sơ · Cửa hàng · Cộng đồng · Hành hương'],
         ['Điện thoại', 'Cần điều khiển trái, vuốt để xoay, chụm 2 ngón để zoom'],
       ].map(([k, v]) => h('tr', null, h('td', null, h('b', null, k)), h('td', null, v))))),
       h('div', { class: 'section-title' }, 'Email khôi phục mật khẩu'),

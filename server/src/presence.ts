@@ -23,7 +23,7 @@ export interface Player {
   chatTimes: number[];
   lastChat: string;
   stamped: Set<string>;
-  seat: { kind: 'sit' | 'kneel'; mat: string } | null;
+  seat: { kind: 'place'; mat: string } | null;
   blocked: Set<number>;
 }
 

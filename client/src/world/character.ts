@@ -37,7 +37,7 @@ export class Avatar {
   private label: THREE.Sprite | null = null;
   anim = 'idle';
   private animT = 0;
-  private blend = { kneel: 0, bow: 0, sit: 0, hands: 0, swing: 0, reach: 0 };
+  private blend = { bow: 0, hands: 0, swing: 0, reach: 0 };
   speed = 0;
 
   constructor(look: LookData, items: ItemData) {
@@ -171,20 +171,19 @@ export class Avatar {
   update(dt: number) {
     this.animT += dt;
     const t = this.animT;
-    const target = { kneel: 0, bow: 0, sit: 0, hands: 0, swing: 0, reach: 0 };
+    const target = { bow: 0, hands: 0, swing: 0, reach: 0 };
     switch (this.anim) {
       case 'walk': case 'run': target.swing = this.anim === 'run' ? 1 : 0.65; break;
-      case 'kneel': target.kneel = 1; target.hands = 1; break;
-      case 'sit': target.sit = 1; target.hands = 0.4; break;
+      case 'place': target.hands = 1; break;   // vào chỗ: đứng thẳng, chắp tay
       case 'prostrate': {
         // Chu kỳ 2,5 giây trên bồ đoàn: chắp tay -> cúi rạp -> giữ -> ngẩng lên
         const p = t % 2.5;
-        target.kneel = 1; target.hands = 1;
+        target.hands = 1;
         target.bow = p < 0.5 ? p / 0.5 * 0.2 : p < 1.1 ? 0.2 + (p - 0.5) / 0.6 * 0.8 : p < 1.7 ? 1 : Math.max(0, 1 - (p - 1.7) / 0.7);
         break;
       }
-      case 'meditate': target.sit = 1; target.hands = 0.4; break;
-      case 'chant': target.kneel = 1; target.hands = 1; target.bow = 0.08 + Math.sin(t * 2) * 0.03; break;
+      case 'meditate': target.hands = 0.4; break;
+      case 'chant': target.hands = 1; target.bow = 0.08 + Math.sin(t * 2) * 0.03; break;
       case 'bead': target.hands = 0.7; break;
       case 'offer': target.reach = Math.min(1, t * 2); target.bow = Math.min(0.25, t * 0.4); break;
       case 'bell': target.reach = 0.6 + Math.sin(t * 6) * 0.4; break;
@@ -196,11 +195,8 @@ export class Avatar {
     const rock = Math.sin(t * (this.anim === 'run' ? 11 : 8));
     this.body.rotation.z = rock * 0.14 * b.swing + Math.sin(t * 1.3) * 0.015 * (1 - b.swing);
     this.body.rotation.x = 0.9 * b.bow + Math.abs(rock) * 0.05 * b.swing;
-    // Quỳ / ngồi: thân hạ thấp và bè ra
-    this.body.position.y = -0.07 * b.kneel - 0.13 * b.sit + Math.abs(rock) * 0.035 * b.swing;
-    const sy = 1 - 0.08 * b.kneel - 0.14 * b.sit, sxz = 1 + 0.05 * b.kneel + 0.1 * b.sit;
-    this.doll.scale.set(sxz, sy, sxz);
-    this.torso.position.y = 1.0 * sy;
+    // Thân giữ nguyên chiều cao; chỉ nảy nhẹ khi đi
+    this.body.position.y = Math.abs(rock) * 0.035 * b.swing;
     // Tay
     const armSwing = -rock * 0.5 * b.swing;
     const join = b.hands;

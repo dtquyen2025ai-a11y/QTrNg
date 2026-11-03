@@ -42,7 +42,7 @@ export const livePos = { x: 0, z: 40 };   // vị trí do "máy chủ" ghi nhậ
 let seat: { kind: SeatKind; mat: string } | null = null;
 function needPose(rule: string) { if (POSE_RULES[rule] && !poseAllows(rule, seat)) throw bad(POSE_RULES[rule].hint, 'need_pose'); }
 
-/** Ngồi/quỳ trên bồ đoàn (kind = null: đứng dậy) */
+/** Vào chỗ trên bồ đoàn (kind = null: rời chỗ) */
 export function pose(kind: SeatKind | null, matId?: string): any {
   if (!kind) { seat = null; return { t: 'pose_ok', kind: null }; }
   const mat = MATS.find((m) => m.id === matId);

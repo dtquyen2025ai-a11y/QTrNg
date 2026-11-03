@@ -8,7 +8,7 @@ Cập nhật: 03/11/2026 · Phiên bản MVP 0.3
 |---|---|
 | Schema 25 bảng, migration, seed, super admin | `npm run migrate` trên PostgreSQL 16 |
 | Đăng ký có email; quên mật khẩu bằng mã 6 số gửi qua email (hạn 15 phút, dùng 1 lần, khoá sau 5 lần sai); thu hồi phiên | Test tích hợp (hộp thư giả) + E2E giao diện |
-| Ngồi / quỳ trên bồ đoàn trước khi hành lễ; giữ chỗ, đi khỏi tự đứng dậy | Test tích hợp + E2E |
+| "Vào chỗ" trên bồ đoàn trước khi hành lễ; giữ chỗ, đi khỏi tự rời chỗ; nhân vật đứng đúng độ cao sàn (bệ chánh điện, bậc thềm, giảng đường, gác chuông, bồ đoàn) | Test tích hợp + E2E + ảnh chụp |
 | Nhân vật dáng lật đật, áo xòe che chân | Ảnh chụp E2E |
 | Tạo nhân vật (pháp danh duy nhất, lọc từ, xem trước 3D) | Test tích hợp + E2E |
 | Kinh tế server-side: nhịp tối thiểu, giới hạn ngày, khu vực, tiêu vật phẩm, sổ giao dịch | 18 test tích hợp (`npm test`) |

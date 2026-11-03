@@ -64,8 +64,8 @@ function connect(token: string, cid: number): Promise<{ ws: WebSocket; msgs: any
   });
 }
 
-/** Ngồi/quỳ trên một bồ đoàn qua kết nối realtime (dấu mộc được đánh sẵn để không lẫn phần thưởng) */
-async function seat(token: string, cid: number, matId: string, kind: 'sit' | 'kneel') {
+/** Vào chỗ trên một bồ đoàn qua kết nối realtime (dấu mộc được đánh sẵn để không lẫn phần thưởng) */
+async function seat(token: string, cid: number, matId: string, kind: 'place' = 'place') {
   const { MATS } = await import('../../shared/content.ts');
   const mat = MATS.find((m) => m.id === matId)!;
   await at(cid, mat.x, mat.z + 0.5);
@@ -174,12 +174,12 @@ test('không dùng được nhân vật của người khác', async () => {
 test('lạy Phật: phải ở chánh điện, có nhịp tối thiểu, cộng thưởng do server tính', async () => {
   const p = await newPlayer('Tâm Thiện');
   await api(`/c/${p.cid}/enter`, { token: p.token, body: {} });
-  // Chưa quỳ trên bồ đoàn: bị từ chối, dù đứng trong Chánh điện
+  // Chưa vào chỗ trên bồ đoàn: bị từ chối, dù đứng trong Chánh điện
   await at(p.cid, 0, -12);
   const wrong = await api(`/c/${p.cid}/act/prostrate`, { token: p.token, body: {} });
   assert.equal(wrong.status, 400);
   assert.equal(wrong.data.code, 'need_pose');
-  const c = await seat(p.token, p.cid, 'h13', 'kneel');
+  const c = await seat(p.token, p.cid, 'h13', 'place');
   const ok = await api(`/c/${p.cid}/act/prostrate`, { token: p.token, body: {} });
   assert.equal(ok.status, 200, JSON.stringify(ok.data));
   assert.equal(ok.data.rewarded, true);
@@ -194,26 +194,23 @@ test('lạy Phật: phải ở chánh điện, có nhịp tối thiểu, cộng 
   c.ws.close();
 });
 
-test('bồ đoàn: ngồi không lạy được, bồ đoàn có người thì không ngồi được, đi khỏi thì tự đứng dậy', async () => {
+test('bồ đoàn: chỗ đã có người thì không vào được, ở quá xa thì không vào được, đi khỏi thì tự rời chỗ', async () => {
   const a = await newPlayer('Ngồi Trước');
   const b = await newPlayer('Đến Sau');
-  const ca = await seat(a.token, a.cid, 'h03', 'sit');
+  const ca = await seat(a.token, a.cid, 'h03', 'place');
   let cb: Awaited<ReturnType<typeof connect>> | null = null;
   try {
-  await pool.query(`DELETE FROM activity_history WHERE character_id=$1`, [a.cid]);
-  const sitPro = await api(`/c/${a.cid}/act/prostrate`, { token: a.token, body: {} });
-  assert.equal(sitPro.data.code, 'need_pose', 'ngồi thì không lạy được, phải quỳ');
   // B tới đúng bồ đoàn đó
   await at(b.cid, 0, -15);
   cb = await connect(b.token, b.cid);
   await cb.wait((m) => m.t === 'welcome');
-  cb.ws.send(JSON.stringify({ t: 'pose', kind: 'kneel', mat: 'h03' }));
+  cb.ws.send(JSON.stringify({ t: 'pose', kind: 'place', mat: 'h03' }));
   const busy = await cb.wait((m) => m.t === 'toast' && m.text.includes('đã có người'));
   assert.ok(busy);
   // Bồ đoàn ở quá xa
-  cb.ws.send(JSON.stringify({ t: 'pose', kind: 'kneel', mat: 'm0' }));
+  cb.ws.send(JSON.stringify({ t: 'pose', kind: 'place', mat: 'm0' }));
   assert.ok(await cb.wait((m) => m.t === 'toast' && m.text.includes('gần bồ đoàn')));
-  // A đứng lên đi chỗ khác thì mất tư thế
+  // A đi chỗ khác thì tự rời chỗ
   ca.ws.send(JSON.stringify({ t: 'move', x: 0.6, z: -14.8, ry: 0, a: 'walk' }));
   assert.ok(await ca.wait((m) => m.t === 'pose_ok' && m.kind === null));
   assert.equal((await api(`/c/${a.cid}/meditate/start`, { token: a.token, body: { minutes: 5 } })).data.code, 'need_pose');
@@ -262,7 +259,7 @@ test('lần hạt: chặn lần quá nhanh, thưởng khi tròn 108 hạt', asyn
 test('thiền: đo thời gian thực trên server, xả thiền sớm chỉ tính phút đã ngồi', async () => {
   const p = await newPlayer('Tĩnh Lặng');
   await api(`/c/${p.cid}/enter`, { token: p.token, body: {} });
-  const c = await seat(p.token, p.cid, 'm0', 'sit');
+  const c = await seat(p.token, p.cid, 'm0', 'place');
   assert.equal((await api(`/c/${p.cid}/meditate/start`, { token: p.token, body: { minutes: 7 } })).status, 400);
   assert.equal((await api(`/c/${p.cid}/meditate/start`, { token: p.token, body: { minutes: 10 } })).status, 200);
   const early = await api(`/c/${p.cid}/meditate/finish`, { token: p.token, body: {} });
@@ -283,7 +280,7 @@ test('thiền: đo thời gian thực trên server, xả thiền sớm chỉ tí
 test('tụng kinh: phải đủ thời lượng tối thiểu', async () => {
   const p = await newPlayer('Trì Kinh');
   await api(`/c/${p.cid}/enter`, { token: p.token, body: {} });
-  const c = await seat(p.token, p.cid, 'c2', 'sit');
+  const c = await seat(p.token, p.cid, 'c2', 'place');
   assert.equal((await api(`/c/${p.cid}/chant/start`, { token: p.token, body: { code: 'hoi_huong' } })).status, 200);
   const fast = await api(`/c/${p.cid}/chant/finish`, { token: p.token, body: {} });
   assert.equal(fast.status, 400);
@@ -315,7 +312,7 @@ test('nhiệm vụ: chưa đủ thì không nhận, đủ thì nhận một lầ
 test('lên cấp: cộng Sen thưởng, ghi sổ giao dịch', async () => {
   const p = await newPlayer('Tinh Tấn');
   await api(`/c/${p.cid}/enter`, { token: p.token, body: {} });
-  const c = await seat(p.token, p.cid, 'c1', 'kneel');
+  const c = await seat(p.token, p.cid, 'c1', 'place');
   await api(`/c/${p.cid}/chant/start`, { token: p.token, body: { code: 'hoi_huong' } });
   await pool.query(`UPDATE activity_sessions SET started_at = now() - interval '30 seconds' WHERE character_id=$1`, [p.cid]);
   await pool.query(`UPDATE character_stats SET exp=50 WHERE character_id=$1`, [p.cid]);
@@ -433,7 +430,7 @@ test('sự kiện nhân công đức do admin cấu hình được áp dụng', 
   const ev = await api('/admin/events', { token: root, body: { name: 'Rằm thử nghiệm', merit_multiplier: 2, starts_at: new Date(Date.now() - 60000).toISOString(), ends_at: new Date(Date.now() + 60000).toISOString(), is_active: true } });
   assert.equal(ev.status, 200, JSON.stringify(ev.data));
   const p = await newPlayer('Rằm Tháng');
-  const c = await seat(p.token, p.cid, 'h20', 'kneel');
+  const c = await seat(p.token, p.cid, 'h20', 'place');
   const r = await api(`/c/${p.cid}/act/prostrate`, { token: p.token, body: {} });
   assert.equal(r.data.gains.merit, 2);
   c.ws.close();
@@ -460,11 +457,11 @@ test('đại lễ: người ở Chánh điện đủ thời lượng được th
     const inside = await newPlayer('Dự Lễ Trong');
     const outside = await newPlayer('Dự Lễ Ngoài');
     const standing = await newPlayer('Đứng Trong Điện');
-    const ci = await seat(inside.token, inside.cid, 'h16', 'kneel');
+    const ci = await seat(inside.token, inside.cid, 'h16', 'place');
     assert.ok(ci.msgs.find((m) => m.t === 'welcome').ceremony.lunar.label, 'welcome có thông tin âm lịch');
     const co = await connect(outside.token, outside.cid);
     await co.wait((m) => m.t === 'welcome');
-    // Người đứng trong Chánh điện nhưng không ngồi/quỳ trên bồ đoàn: không được ghi nhận
+    // Người đứng trong Chánh điện nhưng chưa vào chỗ trên bồ đoàn: không được ghi nhận
     await at(standing.cid, 3, -9);
     const cs = await connect(standing.token, standing.cid);
     await cs.wait((m) => m.t === 'welcome');
@@ -485,7 +482,7 @@ test('đại lễ: người ở Chánh điện đủ thời lượng được th
     const rows = (await pool.query('SELECT character_id, rewarded FROM ceremony_attendance')).rows;
     assert.ok(rows.some((r) => Number(r.character_id) === inside.cid && r.rewarded));
     assert.ok(!rows.some((r) => Number(r.character_id) === outside.cid));
-    assert.ok(!rows.some((r) => Number(r.character_id) === standing.cid), 'đứng trong điện mà không ngồi/quỳ thì không được ghi nhận');
+    assert.ok(!rows.some((r) => Number(r.character_id) === standing.cid), 'đứng trong điện mà chưa vào chỗ thì không được ghi nhận');
     assert.ok(!cs.msgs.some((m) => m.t === 'ceremony_result'));
     cs.ws.close();
     assert.equal(outMerit, 5, 'chỉ có 5 công đức từ dấu mộc cổng');
