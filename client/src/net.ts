@@ -48,6 +48,8 @@ export class Net {
   }
   close() { this.closedByUser = true; this.ws?.close(); this.demo?.setFxHook(null); }
   send(m: any) {
+    // Vào/rời chỗ: bỏ gói vị trí cũ còn chờ gửi, nếu không server sẽ tưởng người chơi vừa rời bồ đoàn
+    if (m.t === 'pose') this.pending = null;
     if (this.demo) {
       if (m.t === 'move') { for (const x of this.demo.onMove(m.x, m.z)) this.emit(x); }
       else if (m.t === 'pose') this.emit(this.demo.pose(m.kind ?? null, m.mat));
