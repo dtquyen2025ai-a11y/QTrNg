@@ -155,6 +155,21 @@ try {
   await ad.waitForSelector('table');
   await ad.screenshot({ path: `${OUT}/13-admin-nguoi-choi.png` });
 
+  // Đại lễ cộng tu: admin tổ chức ngay, người chơi (tab np, đang ở Chánh điện) tham dự và nhận thưởng
+  const adminLogin = await (await fetch(BASE + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: process.env.ADMIN_USERNAME || 'admin', password: process.env.ADMIN_PASSWORD || 'admin12345' }) })).json();
+  const sch = await fetch(BASE + '/api/admin/ceremonies', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + adminLogin.token }, body: JSON.stringify({ minutes: 0 }) });
+  check('Admin tổ chức đại lễ đột xuất', sch.ok, String(sch.status));
+  const cer = await (await fetch(BASE + '/api/ceremony')).json();
+  await np.waitForSelector('.cer-banner:not(.hidden)', { timeout: 30000 });
+  await np.keyboard.press('KeyL');
+  await np.waitForSelector('.drawer h2:has-text("Đại lễ đang diễn ra")');
+  await np.getByRole('button', { name: 'Ngồi tụng cùng đại chúng' }).click();
+  await np.waitForTimeout(4000);
+  await np.screenshot({ path: `${OUT}/14-dai-le.png` });
+  const waitMs = (cer.current ? cer.current.endAt - cer.serverNow : 300000) + 60000;
+  const got = await np.waitForSelector('.toast:has-text("Viên mãn đại lễ")', { timeout: waitMs }).then(() => true).catch(() => false);
+  check('Tham dự trọn đại lễ trong Chánh điện và nhận thưởng', got);
+
   for (const [who, p] of [['A', A], ['B', B]]) check(`Không có lỗi JavaScript (${who})`, p.errors.length === 0, p.errors.slice(0, 3).join(' | '));
   const hScroll = await B.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
   check('Điện thoại không bị cuộn ngang', hScroll);

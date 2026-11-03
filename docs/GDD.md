@@ -107,6 +107,7 @@ Trạng thái: ✅ có trong MVP · 🟡 có một phần · ⏳ kế hoạch gi
 | Kết bạn, lời mời, danh sách bạn, tìm người chơi | ✅ |
 | Tặng quà (Sen hoặc vật phẩm) | ✅ |
 | Hoạt động tập thể: **Cộng tu** (≥3 người cùng tu trong 60 giây thì +20% công đức) | ✅ |
+| **Đại lễ cộng tu** 6:00 và 20:00 giờ VN (ngày Rằm/mùng Một thêm 12:00, công đức x2): cả máy chủ tụng đồng bộ Tâm Kinh, niệm hồng danh, hồi hướng; cần có mặt ở Chánh điện ≥ 80% thời gian; +2% mỗi người dự (tối đa +40%) | ✅ |
 | Bảng xếp hạng (công đức, cấp, thời gian thiền) | ✅ |
 | Chặn, báo cáo, lọc từ cấm, chống spam | ✅ |
 
@@ -239,6 +240,7 @@ Trên điện thoại:
 | Dâng hoa | Tiêu 1 Hoa; hồi 5 phút | 6 | 4 | 0 | 20 |
 | Thỉnh chuông | Hồi 30 giây | 1 | 1 | 0 | 30 |
 | Thả hoa đăng | Tiêu 1 Hoa đăng; lời nguyện qua bộ lọc | 12 | 8 | 0 | 10 |
+| Đại lễ cộng tu | Có mặt ở Chánh điện ≥ 80% thời gian (server lấy mẫu 5 giây/lần) | 30 × hệ số | 40 | 15 | 3 buổi |
 | Khám phá khu vực | Lần đầu đứng trong vùng (server kiểm tra vị trí) | 5 | 10 | 5 | 1 lần mỗi khu |
 
 Quy tắc chung:

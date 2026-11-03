@@ -6,6 +6,7 @@ import { players, roomPlayers, broadcastRoom, send, sendToChar, serverOnline, ty
 import { lookOf, recentLanterns, isBlockedEither } from './game.ts';
 import { stampZone, bumpMetric } from './economy.ts';
 import { tx } from './db.ts';
+import { ceremonyState } from './ceremony.ts';
 import { MAX_SPEED, WORLD_BOUND, filterText, zoneAt, type Zone } from '../../shared/content.ts';
 
 const TICK_MS = 100;
@@ -68,7 +69,7 @@ export function attachRealtime(server: Server) {
       const others = roomPlayers(me.serverId, me.templeId).filter((p) => p.charId !== me!.charId);
       send(me, {
         t: 'welcome', you: publicView(me), players: others.map(publicView),
-        lanterns: await recentLanterns(me.serverId, me.templeId), online: serverOnline(me.serverId),
+        lanterns: await recentLanterns(me.serverId, me.templeId), online: serverOnline(me.serverId), ceremony: ceremonyState(),
       });
       broadcastRoom(me.serverId, me.templeId, { t: 'join', p: publicView(me) }, me.charId);
       checkZone(me);

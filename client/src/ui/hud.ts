@@ -5,7 +5,7 @@ import { Net } from '../net.ts';
 import { World, type RemoteInfo } from '../world/game.ts';
 import { INTERACTABLES, HALL, CHANT_HALL, POND, LAKE, URN, BELL, MEDITATION, BOUNDS, GATE_Z, type Interactable } from '../world/layout.ts';
 import * as sfx from '../audio.ts';
-import { SUTRAS, MEDITATION_OPTIONS, zoneAt, type Zone } from '../../../shared/content.ts';
+import { SUTRAS, MEDITATION_OPTIONS, zoneAt, ceremonyProgram, ceremonyLineAt, CEREMONY_HOURS, CEREMONY_ATTEND_RATIO, type Zone } from '../../../shared/content.ts';
 
 type State = any;
 const PERIODS: [string, string][] = [['daily', 'Ngày'], ['weekly', 'Tuần'], ['special', 'Đặc biệt'], ['pilgrimage', 'Hành hương'], ['community', 'Cộng đồng']];
@@ -31,6 +31,10 @@ export class GameUI {
   private beadLocal = 0;
   private beadTimer = 0;
   private refreshT = 0;
+  private cer: any = null;          // trạng thái đại lễ từ server
+  private clockOffset = 0;          // giờ server - giờ máy
+  private cerPresent = 0;
+  private cerTimer = 0;
   private hasClaimable = false;
   private pendingRequests = 0;
 
@@ -77,6 +81,7 @@ export class GameUI {
       this.els.net.classList.toggle('hidden', s === 'online');
     };
     net.on('welcome', (m) => {
+      if (m.ceremony) this.setCeremony(m.ceremony);
       for (const id of this.world.remotesInfo().map((r) => r.id)) this.world.removeRemote(id);
       for (const p of m.players) this.world.addRemote(p);
       for (const l of m.lanterns.slice().reverse()) this.world.addLantern(l.wish, l.name, Date.now() - new Date(l.created_at).getTime());
@@ -103,6 +108,14 @@ export class GameUI {
     net.on('friend_request', (m) => { toast(`${m.from.name} muốn kết bạn với bạn. Mở Cộng đồng để trả lời.`, 'good', 6000); this.pendingRequests++; this.renderBadges(); });
     net.on('gift', (m) => { toast(m.text, 'good', 6000); sfx.chime(); this.scheduleRefresh(); });
     net.on('refresh', () => this.scheduleRefresh());
+    net.on('ceremony_state', (m) => {
+      const wasRunning = !!this.cer?.current;
+      this.setCeremony(m.s);
+      if (!wasRunning && m.s.current) { sfx.bell(0.9); toast('Đại lễ cộng tu bắt đầu tại Chánh điện', 'big', 6000); }
+    });
+    net.on('ceremony_tick', (m) => { this.cerPresent = m.present; this.clockOffset = m.serverNow - Date.now(); });
+    net.on('ceremony_result', (m) => { sfx.bell(0.8); this.handleOutcome(m.result); toast(`Cùng ${m.participants} đạo hữu viên mãn đại lễ`, 'good', 6000); this.scheduleRefresh(); });
+    net.on('ceremony_missed', (m) => toast(`Bạn có mặt ${Math.round(m.presence * 100)}% thời gian đại lễ, cần ${Math.round(m.need * 100)}% để được ghi nhận.`, 'bad', 7000));
     net.on('kicked', (m) => { net.close(); this.exit('servers'); toast(m.reason, 'bad', 10000); });
     net.on('error', (m) => toast(m.text, 'bad', 6000));
     net.on('closed', (m) => { if (m.code === 4000) { /* chuyển chùa */ } });
@@ -120,6 +133,9 @@ export class GameUI {
     this.hud.appendChild(h('div', { class: 'top-left panel-glass' }, e.badge, h('div', { class: 'who' }, e.name, h('div', { class: 'exp-bar', title: 'Kinh nghiệm' }, e.exp), e.wallet)));
     e.event = h('div', { class: 'event-banner hidden' });
     this.hud.appendChild(e.event);
+    e.cerBanner = h('button', { class: 'cer-banner hidden', onclick: () => this.openDrawer('ceremony') });
+    this.hud.appendChild(e.cerBanner);
+    this.cerTimer = window.setInterval(() => this.renderCeremonyHud(), 1000);
     e.minimap = h('canvas', { width: 300, height: 300 }) as any;
     e.zone = h('div', { class: 'zone-name panel-glass' });
     e.online = h('div', { class: 'net-status panel-glass muted' });
@@ -156,6 +172,7 @@ export class GameUI {
       qb('beads', 'Tràng hạt', '2', () => this.openDrawer('beads'), 'beads'),
       qb('meditate', 'Thiền', '3', () => this.openDrawer('meditate'), 'meditate'),
       qb('book', 'Tụng kinh', '4', () => this.openDrawer('chant'), 'chant'),
+      qb('bell', 'Đại lễ', 'L', () => this.openDrawer('ceremony'), 'ceremony'),
       h('div', { class: 'qb-sep' }),
       qb('scroll', 'Nhiệm vụ', 'J', () => this.openDrawer('missions'), 'missions'),
       qb('user', 'Hồ sơ', 'C', () => this.openDrawer('profile'), 'profile'),
@@ -172,7 +189,7 @@ export class GameUI {
     const map: Record<string, () => void> = {
       Digit1: () => this.doAct('prostrate'), Digit2: () => this.openDrawer('beads'), Digit3: () => this.openDrawer('meditate'), Digit4: () => this.openDrawer('chant'),
       KeyJ: () => this.openDrawer('missions'), KeyC: () => this.openDrawer('profile'), KeyB: () => this.openDrawer('shop'), KeyF: () => this.openDrawer('community'),
-      KeyM: () => this.openDrawer('pilgrimage'), KeyE: () => this.interact(), Enter: () => (this.els.chatInput as HTMLInputElement).focus(),
+      KeyM: () => this.openDrawer('pilgrimage'), KeyL: () => this.openDrawer('ceremony'), KeyE: () => this.interact(), Enter: () => (this.els.chatInput as HTMLInputElement).focus(),
       Escape: () => (this.drawer ? this.closeDrawer() : this.openDrawer('menu')),
       Space: () => { if (this.drawerName === 'beads') this.tapBead(); },
     };
@@ -196,6 +213,8 @@ export class GameUI {
     if (s.event) this.els.event.textContent = `Sự kiện: ${s.event.name} · công đức x${s.event.multiplier}`;
     // Theo dõi nhiệm vụ ngày
     clear(this.els.tracker);
+    this.els.tracker.appendChild(this.els.cerLine ||= h('div', { class: 'cer-line' }));
+    this.renderCeremonyHud();
     const daily = s.missions.filter((m: any) => m.reset === 'daily' && !m.locked && !m.claimed);
     this.hasClaimable = s.missions.some((m: any) => !m.locked && !m.claimed && m.progress >= m.target);
     this.els.tracker.appendChild(h('h4', null, 'Nhiệm vụ hôm nay', h('button', { class: 'btn small ghost', onclick: () => this.openDrawer('missions') }, 'Xem')));
@@ -407,6 +426,7 @@ export class GameUI {
     this.drawer?.remove(); this.drawer = null; this.drawerName = '';
     for (const [k, b] of Object.entries(this.els)) if (k.startsWith('qb_')) b.setAttribute('aria-pressed', 'false');
     if (this.world?.anim === 'bead') this.world.setPose(null);
+    if (this.drawerName === '' && this.cerChanting) { this.cerChanting = false; this.world?.setPose(null); }
     this.renderInteract();
   }
   private tabState: Record<string, string> = {};
@@ -433,6 +453,7 @@ export class GameUI {
     if (n === 'chant') return this.chantPanel();
     if (n === 'lantern') return this.lanternPanel();
     if (n === 'stele') return this.stelePanel();
+    if (n === 'ceremony') return this.ceremonyPanel();
     if (n === 'missions') return this.shell('Nhiệm vụ', PERIODS, (t) => this.missionsBody(t));
     if (n === 'profile') return this.shell('Hồ sơ', [['me', 'Nhân vật'], ['bag', 'Túi đồ'], ['ach', 'Thành tựu'], ['hist', 'Lịch sử']], (t) => this.profileBody(t));
     if (n === 'shop') return this.shell('Cửa hàng', [...SHOP_CATS, ['tx', 'Giao dịch']], (t) => this.shopBody(t));
@@ -600,6 +621,90 @@ export class GameUI {
     this.session = null;
     this.world.setPose(null);
     if (this.drawerName === 'chant') this.chantPanel();
+  }
+
+  // ----- Đại lễ cộng tu -----
+  private cerChanting = false;
+  private setCeremony(st: any) {
+    this.cer = st;
+    this.clockOffset = st.serverNow - Date.now();
+    this.renderCeremonyHud();
+    if (this.drawerName === 'ceremony') this.ceremonyPanel();
+  }
+  private serverNow() { return Date.now() + this.clockOffset; }
+  private hhmm(t: number) { return new Date(t).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' }); }
+  private dur(ms: number) {
+    const m = Math.max(0, Math.round(ms / 60000));
+    return m >= 60 ? `${Math.floor(m / 60)} giờ ${m % 60} phút` : m >= 1 ? `${m} phút` : `${Math.max(0, Math.ceil(ms / 1000))} giây`;
+  }
+  private renderCeremonyHud() {
+    const c = this.cer; if (!c || !this.els.cerBanner) return;
+    const now = this.serverNow();
+    const cur = c.current && now < c.current.endAt ? c.current : null;
+    const b = this.els.cerBanner;
+    b.classList.toggle('hidden', !cur || this.drawerName === 'ceremony');
+    if (cur) b.textContent = `Đại lễ đang diễn ra tại Chánh điện · còn ${this.dur(cur.endAt - now)}${cur.mult > 1 ? ` · công đức x${cur.mult}` : ''} · Tham dự`;
+    const line = this.els.cerLine;
+    if (line) {
+      clear(line);
+      line.append(h('span', { class: c.lunar.holy ? 'holy' : '' }, `Âm lịch: ${c.lunar.label}`));
+      if (cur) line.append(h('button', { class: 'btn small gold', onclick: () => this.openDrawer('ceremony') }, 'Đại lễ đang diễn ra'));
+      else if (c.next) line.append(h('button', { class: 'btn small ghost', onclick: () => this.openDrawer('ceremony') }, `Đại lễ ${this.hhmm(c.next.startAt)} · còn ${this.dur(c.next.startAt - now)}`));
+    }
+  }
+
+  private lastCerLine = -1;
+  private ceremonyPanel() {
+    const c = this.cer;
+    const cur = c?.current && this.serverNow() < c.current.endAt ? c.current : null;
+    if (!cur) {
+      if (this.cerChanting) { this.cerChanting = false; this.world.setPose(null); }
+      this.shell('Đại lễ cộng tu', null, () => h('div', { class: 'list' },
+        c ? h('div', { class: 'note' }, `Hôm nay: ${c.lunar.label} âm lịch.${c.lunar.holy ? ' Ngày Rằm/mùng Một: có thêm đại lễ 12:00 và công đức x2.' : ''}`) : null,
+        c?.next ? h('div', { class: 'stat' }, h('b', null, this.hhmm(c.next.startAt)), h('span', null, `Đại lễ kế tiếp · còn ${this.dur(c.next.startAt - this.serverNow())}${c.next.mult > 1 ? ' · công đức x' + c.next.mult : ''}`)) : null,
+        h('p', { style: { margin: 0 } }, `Đại lễ diễn ra lúc ${CEREMONY_HOURS.map((x) => x + ':00').join(' và ')} hằng ngày (giờ Việt Nam). Cả máy chủ cùng tụng một bài, cùng một nhịp.`),
+        h('div', { class: 'section-title' }, 'Cách được ghi nhận'),
+        h('ul', { style: { margin: 0, paddingLeft: '18px', color: 'var(--muted)' } },
+          h('li', null, 'Có mặt trong Chánh điện ít nhất ' + Math.round(CEREMONY_ATTEND_RATIO * 100) + '% thời gian buổi lễ (khoảng 4 phút).'),
+          h('li', null, 'Mỗi người cùng dự thêm 2% công đức cho tất cả, tối đa +40%.'),
+          h('li', null, 'Nhận thưởng tối đa 3 buổi mỗi ngày.')),
+        h('div', { class: 'section-title' }, 'Trình tự'),
+        h('div', { class: 'sutra' }, ceremonyProgram().filter((l) => l.kind !== 'line').map((l) => h('p', { class: 'read' }, l.text)))));
+      return;
+    }
+    const prog = ceremonyProgram();
+    this.shell('Đại lễ đang diễn ra', null, () => {
+      const status = h('div', { class: 'note' });
+      const box = h('div', { class: 'sutra' });
+      const ps = prog.map((l) => box.appendChild(h('p', { class: l.kind === 'title' ? 'title' : l.kind === 'bell' ? 'bell' : '' }, l.kind === 'bell' ? '🔔 ' + l.text : l.text)));
+      const sit = h('button', { class: 'btn gold big-btn' });
+      sit.onclick = () => {
+        if (this.cerChanting) { this.cerChanting = false; this.world.setPose(null); }
+        else if (this.zone?.code !== 'main_hall') return toast('Hãy vào Chánh điện để tham dự đại lễ.', 'bad');
+        else { this.cerChanting = true; this.world.faceTowards(0, -22); this.world.setPose('chant'); }
+        paint();
+      };
+      const paint = () => {
+        const now = this.serverNow();
+        if (!this.cer?.current || now >= cur.endAt) return;
+        const idx = ceremonyLineAt(now - cur.startAt, cur.durationMs);
+        if (idx !== this.lastCerLine) {
+          this.lastCerLine = idx;
+          const l = prog[idx];
+          if (l) { if (l.kind === 'bell') sfx.bell(0.7); else sfx.woodBlock(0.5); }
+          ps.forEach((p, i) => { p.classList.toggle('read', i < idx); p.classList.toggle('current', i === idx); });
+          ps[Math.min(idx, ps.length - 1)]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+        const inHall = this.zone?.code === 'main_hall';
+        status.textContent = `${inHall ? 'Bạn đang ở Chánh điện, đang được ghi nhận.' : 'Bạn đang ở ngoài Chánh điện, chưa được ghi nhận. Hãy đi vào trong.'} · ${this.cerPresent} đạo hữu trong Chánh điện · còn ${this.dur(cur.endAt - now)}${cur.mult > 1 ? ' · công đức x' + cur.mult : ''}`;
+        status.style.borderLeftColor = inHall ? 'var(--ok)' : 'var(--danger)';
+        sit.textContent = this.cerChanting ? 'Đứng dậy' : 'Ngồi tụng cùng đại chúng';
+      };
+      this.lastCerLine = -1;
+      const t = window.setInterval(() => { if (this.drawerName !== 'ceremony') return clearInterval(t); paint(); }, 400);
+      paint();
+      return h('div', { class: 'list' }, status, box, sit);
+    });
   }
 
   // ----- Hoa đăng -----
@@ -901,7 +1006,7 @@ export class GameUI {
       h('div', { class: 'section-title' }, 'Điều khiển'),
       h('table', { class: 'simple' }, h('tbody', null, [
         ['W A S D / mũi tên', 'Di chuyển (giữ Shift để đi nhanh)'], ['Kéo chuột', 'Xoay camera'], ['Cuộn chuột', 'Phóng to / thu nhỏ'], ['E', 'Tương tác'],
-        ['1 2 3 4', 'Lạy Phật · Tràng hạt · Thiền · Tụng kinh'], ['Space', 'Lần hạt khi mở tràng hạt'], ['Enter', 'Chat'], ['J C B F M', 'Nhiệm vụ · Hồ sơ · Cửa hàng · Cộng đồng · Hành hương'],
+        ['1 2 3 4', 'Lạy Phật · Tràng hạt · Thiền · Tụng kinh'], ['L', 'Đại lễ cộng tu'], ['Space', 'Lần hạt khi mở tràng hạt'], ['Enter', 'Chat'], ['J C B F M', 'Nhiệm vụ · Hồ sơ · Cửa hàng · Cộng đồng · Hành hương'],
         ['Điện thoại', 'Cần điều khiển trái, vuốt để xoay, chụm 2 ngón để zoom'],
       ].map(([k, v]) => h('tr', null, h('td', null, h('b', null, k)), h('td', null, v))))),
       h('button', { class: 'btn', onclick: () => this.exit('servers') }, 'Đổi máy chủ'),
@@ -911,6 +1016,7 @@ export class GameUI {
   // ---------- Thoát ----------
   exit(reason: 'logout' | 'servers' | 'travel') {
     if (this.session) clearInterval(this.session.timer);
+    clearInterval(this.cerTimer);
     this.flushBeads();
     window.removeEventListener('keydown', this.onKey);
     this.drawer?.remove();

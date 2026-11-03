@@ -6,6 +6,7 @@ import { grant, addItem, invalidateCaches } from './economy.ts';
 import { players, sendToChar, serverOnline } from './presence.ts';
 import { clearZoneCache } from './realtime.ts';
 import { vnDay } from './time.ts';
+import { scheduleAdhoc, recentCeremonies, ceremonyState } from './ceremony.ts';
 
 async function log(adminId: number, action: string, target: string | null, detail: unknown) {
   await q('INSERT INTO admin_logs (admin_id, action, target, detail) VALUES ($1,$2,$3,$4)', [adminId, action, target, JSON.stringify(detail ?? {})]);
@@ -218,6 +219,13 @@ export function adminRouter() {
     const cid = req.query.char ? Number(req.query.char) : null;
     res.json(await q(`SELECT m.*, c.dharma_name AS sender FROM messages m JOIN characters c ON c.id=m.sender_id
                       WHERE ($1::bigint IS NULL OR m.sender_id=$1) ORDER BY m.id DESC LIMIT 200`, [cid]));
+  });
+
+  r.get('/ceremonies', async (_req, res) => res.json({ state: ceremonyState(), list: await recentCeremonies() }));
+  r.post('/ceremonies', requireRole('game_admin'), async (req, res) => {
+    const minutes = Number(req.body.minutes);
+    if (!Number.isFinite(minutes) || minutes < 0 || minutes > 24 * 60) throw bad('Số phút không hợp lệ (0–1440).');
+    try { res.json(await scheduleAdhoc(minutes, req.user!.id)); } catch (e: any) { throw bad(e.message); }
   });
 
   r.get('/logs', requireRole('game_admin'), async (_req, res) => {

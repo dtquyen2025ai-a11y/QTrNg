@@ -9,6 +9,7 @@ import { adminRouter } from './admin.ts';
 import { broadcastRoom, players } from './presence.ts';
 import { filterText, SUTRAS } from '../../shared/content.ts';
 import { pool } from './db.ts';
+import { ceremonyState } from './ceremony.ts';
 
 export function createApp() {
   const app = express();
@@ -30,6 +31,7 @@ export function createApp() {
 
   api.get('/servers', async (_req, res) => res.json(await G.listServers()));
   api.get('/sutras', (_req, res) => res.json(SUTRAS));
+  api.get('/ceremony', (_req, res) => res.json(ceremonyState()));
 
   api.get('/me', requireAuth, async (req, res) => res.json({ user: req.user, characters: await G.myCharacters(req.user!.id) }));
   api.post('/characters', requireAuth, async (req, res) => {

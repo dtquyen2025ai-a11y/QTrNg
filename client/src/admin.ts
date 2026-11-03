@@ -44,7 +44,7 @@ const PAGES: [string, string, string][] = [
   ['stats', 'Tổng quan', 'support'], ['online', 'Người online', 'support'], ['players', 'Người chơi', 'support'],
   ['reports', 'Báo cáo vi phạm', 'support'], ['messages', 'Tin nhắn', 'moderator'], ['transactions', 'Giao dịch', 'support'],
   ['missions', 'Nhiệm vụ', 'support'], ['items', 'Vật phẩm & cửa hàng', 'support'], ['activities', 'Hoạt động & cân bằng', 'support'],
-  ['events', 'Sự kiện', 'support'], ['temples', 'Chùa', 'support'], ['servers', 'Máy chủ', 'support'], ['logs', 'Nhật ký quản trị', 'game_admin'],
+  ['events', 'Sự kiện', 'support'], ['ceremonies', 'Đại lễ', 'support'], ['temples', 'Chùa', 'support'], ['servers', 'Máy chủ', 'support'], ['logs', 'Nhật ký quản trị', 'game_admin'],
 ];
 
 function render() {
@@ -216,6 +216,24 @@ const VIEWS: Record<string, (main: HTMLElement) => Promise<void>> = {
         { key: 'name', label: 'Tên', type: 'text' }, { key: 'merit_multiplier', label: 'Hệ số công đức', type: 'num' },
         { key: 'starts_at', label: 'Bắt đầu (giờ VN)', type: 'date' }, { key: 'ends_at', label: 'Kết thúc (giờ VN)', type: 'date' }, { key: 'is_active', label: 'Bật', type: 'bool' },
       ]));
+  },
+  async ceremonies(main) {
+    const d = await api('/admin/ceremonies');
+    clear(main);
+    const st = d.state;
+    const mins = h('input', { type: 'number', min: 0, max: 1440, value: 5, style: { width: '90px' }, id: 'cer-min' }) as HTMLInputElement;
+    (main.append as (...n: (Node | string | null)[]) => void)(h('h2', null, 'Đại lễ cộng tu'),
+      h('div', { class: 'cards' },
+        h('div', { class: 'card' }, h('b', null, st.lunar.label), h('span', null, st.lunar.holy ? 'Ngày Rằm/mùng Một: công đức x2' : 'Âm lịch hôm nay')),
+        h('div', { class: 'card' }, h('b', null, st.current ? 'Đang diễn ra' : st.next ? dt(new Date(st.next.startAt).toISOString()) : '—'), h('span', null, st.current ? `Kết thúc ${dt(new Date(st.current.endAt).toISOString())}` : 'Buổi kế tiếp'))),
+      can('game_admin') ? h('form', { class: 'row', onsubmit: async (e: Event) => {
+        e.preventDefault();
+        try { await api('/admin/ceremonies', { minutes: Number(mins.value) }); flash(main, 'Đã lên lịch đại lễ đột xuất. Người chơi online được thông báo.'); setTimeout(render, 800); }
+        catch (ex: any) { flash(main, ex.message); }
+      } }, h('strong', null, 'Tổ chức đại lễ đột xuất sau'), mins, 'phút', h('button', { class: 'btn primary' }, 'Lên lịch')) : null,
+      h('p', { class: 'muted' }, 'Lịch cố định: 6:00 và 20:00 giờ VN; ngày Rằm/mùng Một thêm 12:00. Mỗi buổi khoảng 4 phút.'),
+      table(['Bắt đầu', 'Loại', 'Âm lịch', 'Hệ số', 'Người được ghi nhận', 'Trạng thái'], d.list.map((c: any) => [
+        dt(c.starts_at), c.kind === 'adhoc' ? 'Đột xuất' : 'Theo lịch', c.lunar_label || '', `x${c.multiplier}`, num(c.participants), c.finished ? 'Đã xong' : 'Đang diễn ra'])));
   },
   async temples(main) {
     const rows = await api('/admin/temples');

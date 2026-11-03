@@ -137,3 +137,34 @@ export function isNameAllowed(name: string): boolean {
   const p = stripAccents(name);
   return !BANNED.some((b) => p.split(/\s+/).includes(b) || (b.includes(' ') && p.includes(b)));
 }
+
+// ---------- Đại lễ cộng tu ----------
+export const CEREMONY_HOURS = [6, 20];          // giờ VN hằng ngày
+export const CEREMONY_HOLY_EXTRA_HOUR = 12;    // thêm buổi trưa ngày Rằm / mùng Một
+export const CEREMONY_HOLY_MULT = 2;
+export const CEREMONY_ATTEND_RATIO = 0.8;       // có mặt ≥ 80% thời lượng mới được ghi nhận
+export const CEREMONY_ANNOUNCE_MIN = [10, 1];
+
+export interface CeremonyLine { kind: 'bell' | 'title' | 'line'; text: string; seconds: number }
+
+/** Trình tự đại lễ: chuông khai lễ → Tâm Kinh → niệm hồng danh → hồi hướng → chuông kết lễ */
+export function ceremonyProgram(): CeremonyLine[] {
+  const out: CeremonyLine[] = [{ kind: 'bell', text: 'Ba hồi chuông khai lễ. Mời đại chúng an tọa, chắp tay.', seconds: 15 }];
+  for (const code of ['tam_kinh', 'niem_phat', 'hoi_huong']) {
+    const s = SUTRAS.find((x) => x.code === code)!;
+    out.push({ kind: 'title', text: s.name, seconds: 4 });
+    s.lines.forEach((t, i) => { if (!(code === 'tam_kinh' && i === 0)) out.push({ kind: 'line', text: t, seconds: 6 }); });
+  }
+  out.push({ kind: 'bell', text: 'Chuông kết lễ. Nguyện mọi người an lạc.', seconds: 10 });
+  return out;
+}
+export const ceremonySeconds = () => ceremonyProgram().reduce((n, l) => n + l.seconds, 0);
+
+/** Dòng đang tụng tại thời điểm `elapsedMs` (chia tỉ lệ nếu thời lượng lễ khác chương trình chuẩn) */
+export function ceremonyLineAt(elapsedMs: number, durationMs: number): number {
+  const prog = ceremonyProgram();
+  const scale = durationMs / (ceremonySeconds() * 1000);
+  let t = 0;
+  for (let i = 0; i < prog.length; i++) { t += prog[i].seconds * 1000 * scale; if (elapsedMs < t) return i; }
+  return prog.length;
+}

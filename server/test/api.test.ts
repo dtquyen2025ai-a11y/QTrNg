@@ -53,7 +53,7 @@ function connect(token: string, cid: number): Promise<{ ws: WebSocket; msgs: any
     const wait = (pred: (m: any) => boolean, ms = 3000) => new Promise<any>((res, rej) => {
       const found = msgs.find(pred);
       if (found) return res(found);
-      const t = setTimeout(() => rej(new Error('Hết thời gian chờ tin nhắn WS')), ms);
+      const t = setTimeout(() => rej(new Error('Hết thời gian chờ tin nhắn WS; đã nhận: ' + msgs.map((x) => x.t).join(','))), ms);
       waiters.push({ pred, res: (m) => { clearTimeout(t); res(m); } });
     });
     ws.on('open', () => resolve({ ws, msgs, wait }));
@@ -350,4 +350,56 @@ test('sự kiện nhân công đức do admin cấu hình được áp dụng', 
   const r = await api(`/c/${p.cid}/act/prostrate`, { token: p.token, body: {} });
   assert.equal(r.data.gains.merit, 2);
   await api(`/admin/events/${ev.data.id}`, { method: 'PATCH', token: root, body: { is_active: false } });
+});
+
+test('âm lịch: đối chiếu các ngày lễ đã biết', async () => {
+  const { solarToLunar } = await import('../../shared/lunar.ts');
+  const cases: [number, number, number, number, number][] = [
+    [29, 1, 2025, 1, 1], [17, 2, 2026, 1, 1], [10, 2, 2024, 1, 1], [6, 10, 2025, 15, 8], [25, 9, 2026, 15, 8], [6, 9, 2025, 15, 7],
+  ];
+  for (const [d, m, y, ld, lm] of cases) {
+    const l = solarToLunar(d, m, y);
+    assert.deepEqual([l.day, l.month], [ld, lm], `${d}/${m}/${y}`);
+  }
+});
+
+test('đại lễ: người ở Chánh điện đủ thời lượng được thưởng, người ở ngoài thì không', async () => {
+  const { configureCeremony, startCeremonyScheduler } = await import('../src/ceremony.ts');
+  const { lunarOf, isHolyDay } = await import('../../shared/lunar.ts');
+  configureCeremony({ sampleMs: 100, durationMs: 1500, scheduled: false });
+  const stop = startCeremonyScheduler(50);
+  try {
+    const inside = await newPlayer('Dự Lễ Trong');
+    const outside = await newPlayer('Dự Lễ Ngoài');
+    await at(inside.cid, 0, -12);
+    const ci = await connect(inside.token, inside.cid);
+    const co = await connect(outside.token, outside.cid);
+    const w = await ci.wait((m) => m.t === 'welcome');
+    assert.ok(w.ceremony.lunar.label, 'welcome có thông tin âm lịch');
+    await co.wait((m) => m.t === 'welcome');
+    await ci.wait((m) => m.t === 'stamp' && m.zone === 'main_hall'); // dấu mộc Chánh điện (+5) cộng trước khi đo
+    const root = (await api('/auth/login', { body: { username: 'root', password: 'root-pass-123' } })).data.token;
+    const before = (await wallet(inside.cid)).merit;
+    // Người chơi thường không được tổ chức lễ
+    assert.equal((await api('/admin/ceremonies', { token: inside.token, body: { minutes: 0 } })).status, 403);
+    assert.equal((await api('/admin/ceremonies', { token: root, body: { minutes: 0 } })).status, 200);
+    await ci.wait((m) => m.t === 'ceremony_state' && m.s.current, 3000);
+    const res = await ci.wait((m) => m.t === 'ceremony_result', 5000);
+    const mult = isHolyDay(lunarOf()) ? 2 : 1;
+    assert.equal(res.result.gains.merit, Math.round(30 * mult));
+    assert.equal(res.participants, 1);
+    assert.equal((await wallet(inside.cid)).merit, before + res.result.gains.merit);
+    // Người không vào Chánh điện: không có bản ghi tham dự, không nhận thưởng
+    const outMerit = (await wallet(outside.cid)).merit;
+    assert.ok(!co.msgs.some((m) => m.t === 'ceremony_result'));
+    const rows = (await pool.query('SELECT character_id, rewarded FROM ceremony_attendance')).rows;
+    assert.ok(rows.some((r) => Number(r.character_id) === inside.cid && r.rewarded));
+    assert.ok(!rows.some((r) => Number(r.character_id) === outside.cid));
+    assert.equal(outMerit, 5, 'chỉ có 5 công đức từ dấu mộc cổng');
+    const ms = (await api(`/c/${inside.cid}/missions`, { token: inside.token })).data;
+    assert.equal(ms.find((m: any) => m.code === 'd_ceremony').progress, 1);
+    ci.ws.close(); co.ws.close();
+  } finally {
+    stop();
+  }
 });

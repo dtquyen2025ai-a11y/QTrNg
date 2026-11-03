@@ -190,9 +190,11 @@ async function lastAt(db: PoolClient, charId: number, code: string): Promise<num
 }
 
 const STAT_COL: Record<string, string> = {
+  ceremony: 'ceremonies',
   prostrate: 'prostrations', chant: 'chants', incense: 'offerings', candle: 'offerings', flower: 'offerings', lantern: 'lanterns',
 };
 const METRIC: Record<string, string> = {
+  ceremony: 'ceremony',
   prostrate: 'prostrate', bead: 'bead_round', meditate: 'meditate_min', chant: 'chant',
   incense: 'offering', candle: 'offering', flower: 'offering', bell: 'bell', lantern: 'lantern', explore: 'explore',
 };
@@ -201,7 +203,7 @@ const METRIC: Record<string, string> = {
  * Thực hiện một hoạt động có thưởng.
  * amount: số lần (mặc định 1) hoặc số phút với thiền.
  */
-async function perform(db: PoolClient, ctx: Ctx, code: string, amount: number, meta: Record<string, unknown>, opts: { skipZone?: boolean; skipInterval?: boolean } = {}): Promise<Outcome> {
+async function perform(db: PoolClient, ctx: Ctx, code: string, amount: number, meta: Record<string, unknown>, opts: { skipZone?: boolean; skipInterval?: boolean; noCoop?: boolean; bonusMult?: number } = {}): Promise<Outcome> {
   const act = (await activities()).get(code);
   if (!act || !act.is_active) throw bad('Hoạt động đang tạm đóng.');
   await one('SELECT 1 FROM character_stats WHERE character_id=$1 FOR UPDATE', [ctx.charId], db); // tuần tự hóa theo nhân vật
@@ -223,11 +225,11 @@ async function perform(db: PoolClient, ctx: Ctx, code: string, amount: number, m
   let coopCount = 0, merit = 0, exp = 0, sen = 0;
   let eventName: string | null = null;
   if (rewarded) {
-    coopCount = noteCoop(ctx.serverId, ctx.templeId, ctx.charId);
+    coopCount = opts.noCoop ? 0 : noteCoop(ctx.serverId, ctx.templeId, ctx.charId);
     const ev = await activeMultiplier(db);
     eventName = ev.name;
     const coopMult = coopCount >= COOP_MIN_PLAYERS ? 1 + COOP_BONUS : 1;
-    merit = Math.round(act.merit * rewardAmount * ev.mult * coopMult);
+    merit = Math.round(act.merit * rewardAmount * ev.mult * coopMult * (opts.bonusMult ?? 1));
     exp = act.exp * rewardAmount;
     sen = act.sen * rewardAmount;
   }
@@ -373,5 +375,18 @@ export async function dailyCheckIn(charId: number, gift: Record<string, number>)
     await bumpMetric(db, charId, 'active_day', 1);
     const ach = await checkAchievements(db, charId);
     return { gift, achievements: ach };
+  });
+}
+
+// ---------- Đại lễ cộng tu ----------
+/** Thưởng cho người có mặt đủ thời lượng. bonusMult = hệ số ngày Rằm/mùng Một × hệ số đông người. */
+export async function rewardCeremony(charId: number, ceremonyId: number, presence: number, bonusMult: number) {
+  return tx(async (db) => {
+    const ctx = await charContext(db, charId);
+    const out = await perform(db, ctx, 'ceremony', 1, { ceremony: ceremonyId, presence: +presence.toFixed(2) }, { skipZone: true, skipInterval: true, noCoop: true, bonusMult });
+    await q(`INSERT INTO ceremony_attendance (ceremony_id, character_id, presence, rewarded, merit) VALUES ($1,$2,$3,$4,$5)
+             ON CONFLICT DO NOTHING`, [ceremonyId, charId, presence, out.rewarded, out.gains.merit], db);
+    out.message = out.rewarded ? `Viên mãn đại lễ: +${out.gains.merit} công đức, +${out.gains.sen} Sen` : 'Đại lễ viên mãn. Hôm nay bạn đã nhận đủ thưởng đại lễ.';
+    return out;
   });
 }
