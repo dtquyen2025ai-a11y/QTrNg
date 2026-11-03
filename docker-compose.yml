@@ -1,0 +1,47 @@
+# Chạy trên VPS: docker compose up -d --build
+# Cần file .env cùng thư mục với: JWT_SECRET, ADMIN_USERNAME, ADMIN_PASSWORD, POSTGRES_PASSWORD, DOMAIN
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: chua
+      POSTGRES_USER: chua
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Thiếu POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chua -d chua"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://chua:${POSTGRES_PASSWORD}@db:5432/chua
+      JWT_SECRET: ${JWT_SECRET:?Thiếu JWT_SECRET}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Thiếu ADMIN_PASSWORD}
+      SMTP_HOST: ${SMTP_HOST:?Thiếu SMTP_HOST (gửi email đặt lại mật khẩu)}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+    expose: ["8080"]
+
+  # HTTPS tự động (Let's Encrypt) + chuyển tiếp WebSocket
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    ports: ["80:80", "443:443"]
+    command: caddy reverse-proxy --from ${DOMAIN:?Thiếu DOMAIN} --to app:8080
+    volumes:
+      - caddy:/data
+
+volumes:
+  pgdata:
+  caddy:

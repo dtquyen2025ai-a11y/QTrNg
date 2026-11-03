@@ -338,8 +338,14 @@
       week.appendChild(b);
     });
   }
-  $('resetBtn').addEventListener('click', () => {
-    if (!confirm('Xóa toàn bộ công đức và lịch sử trên máy này?')) return;
+  let resetArmed = null;
+  $('resetBtn').addEventListener('click', (e) => {
+    if (!resetArmed) {
+      e.target.textContent = 'Chạm lần nữa để xóa hết công đức';
+      resetArmed = setTimeout(() => { resetArmed = null; e.target.textContent = 'Xóa dữ liệu trên máy này'; }, 4000);
+      return;
+    }
+    clearTimeout(resetArmed); resetArmed = null;
     S = defaults(); save(); location.reload();
   });
 
