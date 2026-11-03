@@ -1,13 +1,15 @@
 # Tiến độ & việc còn lại
 
-Cập nhật: 03/11/2026 · Phiên bản MVP 0.2
+Cập nhật: 03/11/2026 · Phiên bản MVP 0.3
 
 ## Đã hoàn thành và đã kiểm chứng
 
 | Module | Cách kiểm chứng |
 |---|---|
 | Schema 25 bảng, migration, seed, super admin | `npm run migrate` trên PostgreSQL 16 |
-| Đăng ký, đăng nhập, khôi phục bằng mã, thu hồi phiên | Test tích hợp + E2E |
+| Đăng ký có email; quên mật khẩu bằng mã 6 số gửi qua email (hạn 15 phút, dùng 1 lần, khoá sau 5 lần sai); thu hồi phiên | Test tích hợp (hộp thư giả) + E2E giao diện |
+| Ngồi / quỳ trên bồ đoàn trước khi hành lễ; giữ chỗ, đi khỏi tự đứng dậy | Test tích hợp + E2E |
+| Nhân vật dáng lật đật, áo xòe che chân | Ảnh chụp E2E |
 | Tạo nhân vật (pháp danh duy nhất, lọc từ, xem trước 3D) | Test tích hợp + E2E |
 | Kinh tế server-side: nhịp tối thiểu, giới hạn ngày, khu vực, tiêu vật phẩm, sổ giao dịch | 18 test tích hợp (`npm test`) |
 | Lạy Phật, tràng hạt 108, thiền (đo giờ server), tụng kinh (thời lượng tối thiểu), dâng hương/nến/hoa, chuông, hoa đăng | Test tích hợp; lạy Phật, tràng hạt kiểm thêm bằng E2E |
@@ -30,7 +32,7 @@ Cập nhật: 03/11/2026 · Phiên bản MVP 0.2
 
 1. **Chưa nghiên cứu được game tham chiếu.** Môi trường phát triển chặn tên miền `niemphat.online`.
 2. **Đăng nhập Google/Facebook chưa có.** Cần OAuth client ID. Nút này không hiển thị để tránh nút không có chức năng.
-3. **Khôi phục tài khoản dùng mã khôi phục**, chưa có email (cần dịch vụ gửi mail).
+3. **Gửi email cần cấu hình SMTP** khi deploy (xem `docs/DEPLOY.md`). Chưa thử với một nhà cung cấp SMTP thật: test dùng hộp thư giả.
 4. **Nghe tụng kinh bằng audio chưa có.** Cần bản ghi hợp pháp. Hiện chỉ có chế độ đọc.
 5. **Trạng thái online nằm trong bộ nhớ một tiến trình.** Chạy nhiều tiến trình cần chuyển `presence.ts` sang Redis.
 6. **Mô hình 3D dựng bằng khối cơ bản.** Đủ để chơi, nhưng chưa đạt mức "mô hình đẹp". Cần họa sĩ 3D làm GLB cho chánh điện, tượng Phật và nhân vật.

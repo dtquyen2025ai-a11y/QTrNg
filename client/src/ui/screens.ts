@@ -15,64 +15,57 @@ const brand = (sub: string) => h('div', { class: 'brand' }, h('h1', null, 'Tâm 
 
 export function authScreen(existing: Session | null): Promise<Session> {
   return new Promise((resolve) => {
-    let mode: 'login' | 'register' | 'recover' = 'login';
+    let mode: 'login' | 'register' | 'forgot' = 'login';
+    let resetEmail = '';            // đã gửi mã tới email này → hiện bước nhập mã
     const err = h('div', { class: 'error', role: 'alert' });
+    const info = h('div', { class: 'note hidden', role: 'status' });
     const body = h('div', { class: 'form' });
     const tabs = h('div', { class: 'tabs', role: 'tablist' });
-    const done = (s: Session, recovery?: string) => {
-      saveSession(s); setToken(s.token);
-      if (recovery) recoveryScreen(recovery).then(() => resolve(s));
-      else resolve(s);
-    };
+    const done = (s: Session) => { saveSession(s); setToken(s.token); resolve(s); };
+    const field = (id: string, label: string, input: HTMLElement) => h('div', { class: 'field' }, h('label', { for: id }, label), input);
     const render = () => {
       clear(tabs); clear(body); err.textContent = '';
-      for (const [k, label] of [['login', 'Đăng nhập'], ['register', 'Đăng ký'], ['recover', 'Quên mật khẩu']] as const) {
-        tabs.appendChild(h('button', { role: 'tab', 'aria-selected': String(mode === k), onclick: () => { mode = k; render(); } }, label));
+      for (const [k, label] of [['login', 'Đăng nhập'], ['register', 'Đăng ký'], ['forgot', 'Quên mật khẩu']] as const) {
+        tabs.appendChild(h('button', { role: 'tab', 'aria-selected': String(mode === k), onclick: () => { mode = k; info.classList.add('hidden'); render(); } }, label));
       }
-      const user = h('input', { class: 'input', id: 'auth-user', autocomplete: 'username', placeholder: 'vd: minhtam', autocapitalize: 'off', spellcheck: 'false' });
-      const pass = h('input', { class: 'input', id: 'auth-pass', type: 'password', autocomplete: mode === 'login' ? 'current-password' : 'new-password', placeholder: 'Ít nhất 8 ký tự' });
-      const code = h('input', { class: 'input', id: 'auth-code', placeholder: 'XXXX-XXXX-XXXX-XXXX', autocapitalize: 'characters', spellcheck: 'false' });
-      const submit = h('button', { class: 'btn primary big-btn', type: 'submit' }, mode === 'login' ? 'Vào chùa' : mode === 'register' ? 'Tạo tài khoản' : 'Đặt lại mật khẩu');
+      const user = h('input', { class: 'input', id: 'auth-user', autocomplete: 'username', placeholder: 'vd: minhtam', autocapitalize: 'off', spellcheck: 'false' }) as HTMLInputElement;
+      const email = h('input', { class: 'input', id: 'auth-email', type: 'email', autocomplete: 'email', placeholder: 'ban@example.com', value: resetEmail }) as HTMLInputElement;
+      const pass = h('input', { class: 'input', id: 'auth-pass', type: 'password', autocomplete: mode === 'login' ? 'current-password' : 'new-password', placeholder: 'Ít nhất 8 ký tự' }) as HTMLInputElement;
+      const code = h('input', { class: 'input', id: 'auth-code', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: 6, placeholder: '6 chữ số trong email' }) as HTMLInputElement;
+      const step2 = mode === 'forgot' && !!resetEmail;
+      const label = mode === 'login' ? 'Vào chùa' : mode === 'register' ? 'Tạo tài khoản' : step2 ? 'Đặt lại mật khẩu' : 'Gửi mã qua email';
+      const submit = h('button', { class: 'btn primary big-btn', type: 'submit' }, label);
       const form = h('form', { class: 'form', onsubmit: async (e: Event) => {
         e.preventDefault(); err.textContent = ''; submit.disabled = true;
         try {
           if (mode === 'login') done(await api('/auth/login', { username: user.value, password: pass.value }));
-          else if (mode === 'register') { const r = await api('/auth/register', { username: user.value, password: pass.value }); done(r, r.recoveryCode); }
-          else { const r = await api('/auth/recover', { username: user.value, recoveryCode: code.value, newPassword: pass.value }); toast('Đã đặt lại mật khẩu.', 'good'); done(r, r.recoveryCode); }
+          else if (mode === 'register') done(await api('/auth/register', { username: user.value, email: email.value, password: pass.value }));
+          else if (!step2) {
+            const r = await api('/auth/forgot', { email: email.value });
+            resetEmail = email.value.trim();
+            info.textContent = r.message; info.classList.remove('hidden');
+            render();
+          } else {
+            const r = await api('/auth/reset', { email: email.value, code: code.value, newPassword: pass.value });
+            toast('Đã đặt lại mật khẩu.', 'good'); resetEmail = ''; done(r);
+          }
         } catch (ex: any) { err.textContent = ex.message; }
         finally { submit.disabled = false; }
       } },
-        h('div', { class: 'field' }, h('label', { for: 'auth-user' }, 'Tên đăng nhập'), user),
-        mode === 'recover' ? h('div', { class: 'field' }, h('label', { for: 'auth-code' }, 'Mã khôi phục (nhận khi đăng ký)'), code) : null,
-        h('div', { class: 'field' }, h('label', { for: 'auth-pass' }, mode === 'recover' ? 'Mật khẩu mới' : 'Mật khẩu'), pass),
-        err, submit);
+        mode !== 'forgot' ? field('auth-user', 'Tên đăng nhập', user) : null,
+        mode !== 'login' ? field('auth-email', mode === 'register' ? 'Email (dùng để lấy lại mật khẩu)' : 'Email đã đăng ký', email) : null,
+        step2 ? field('auth-code', 'Mã xác nhận', code) : null,
+        mode !== 'forgot' || step2 ? field('auth-pass', step2 ? 'Mật khẩu mới' : 'Mật khẩu', pass) : null,
+        err, submit,
+        step2 ? h('button', { class: 'btn ghost', type: 'button', onclick: () => { resetEmail = ''; info.classList.add('hidden'); render(); } }, 'Gửi lại mã hoặc dùng email khác') : null);
       body.appendChild(form);
-      if (mode === 'register') body.appendChild(h('p', { class: 'muted', style: { margin: 0, fontSize: '12px' } }, 'Sau khi đăng ký, bạn sẽ nhận một mã khôi phục. Hãy lưu lại để lấy lại tài khoản khi quên mật khẩu.'));
-      user.focus();
+      (mode === 'forgot' ? (step2 ? code : email) : user).focus();
     };
-    const cont = existing ? h('button', { class: 'btn gold big-btn', onclick: () => resolve(existing) }, `Tiếp tục với tài khoản ${existing.user.username}`) : null;
     const demoNote = import.meta.env.VITE_DEMO ? h('div', { class: 'note' }, 'Bản dùng thử offline: chạy hoàn toàn trên trình duyệt của bạn, chỉ có một người chơi, tài khoản và tiến trình lưu trên máy này. Bản thật có máy chủ và nhiều người chơi cùng lúc.') : null;
-    screen(h('div', { class: 'card' }, brand('Chùa trực tuyến · tu tập cùng đạo hữu'), demoNote, cont, tabs, body,
+    const cont = existing ? h('button', { class: 'btn gold big-btn', onclick: () => resolve(existing) }, `Tiếp tục với tài khoản ${existing.user.username}`) : null;
+    screen(h('div', { class: 'card' }, brand('Chùa trực tuyến · tu tập cùng đạo hữu'), demoNote, cont, tabs, info, body,
       h('p', { class: 'muted', style: { margin: 0, fontSize: '12px', textAlign: 'center' } }, 'Công đức trong game là điểm ghi nhận hoạt động, không mang giá trị tâm linh thực tế.')));
     render();
-  });
-}
-
-export function recoveryScreen(code: string): Promise<void> {
-  return new Promise((resolve) => {
-    const copy = h('button', { class: 'btn', onclick: async () => {
-      try { await navigator.clipboard.writeText(code); copy.textContent = 'Đã sao chép'; }
-      catch { const sel = getSelection(); const r = document.createRange(); r.selectNodeContents(box); sel?.removeAllRanges(); sel?.addRange(r); copy.textContent = 'Đã chọn, nhấn Ctrl+C'; }
-    } }, 'Sao chép mã');
-    const box = h('div', { class: 'recovery-code' }, code);
-    const ok = h('input', { type: 'checkbox', id: 'saved', onchange: () => { go.disabled = !ok.checked; } });
-    const go = h('button', { class: 'btn primary big-btn', disabled: true, onclick: () => resolve() }, 'Tiếp tục');
-    screen(h('div', { class: 'card' },
-      h('h2', null, 'Mã khôi phục tài khoản'),
-      h('p', { style: { margin: 0 } }, 'Mã này chỉ hiện một lần. Dùng nó để đặt lại mật khẩu khi quên. Mỗi lần dùng, bạn sẽ nhận mã mới.'),
-      box, copy,
-      h('label', { style: { display: 'flex', gap: '8px', alignItems: 'center' } }, ok, 'Tôi đã lưu mã khôi phục ở nơi an toàn'),
-      go));
   });
 }
 

@@ -4,7 +4,7 @@
 import seed from './seed.json';
 import {
   expForLevel, SUTRAS, MEDITATION_OPTIONS, DAILY_GIFT, COOP_BONUS, filterText, isNameAllowed, inAnyZone, zoneAt,
-  ceremonySeconds, CEREMONY_ATTEND_RATIO, CEREMONY_HOURS, CEREMONY_HOLY_EXTRA_HOUR, CEREMONY_HOLY_MULT, type Zone,
+  ceremonySeconds, CEREMONY_ATTEND_RATIO, CEREMONY_HOURS, CEREMONY_HOLY_EXTRA_HOUR, CEREMONY_HOLY_MULT, MATS, MAT_REACH, POSE_RULES, poseAllows, type Zone, type SeatKind,
 } from '../../../shared/content.ts';
 import { lunarOf, lunarLabel, isHolyDay } from '../../../shared/lunar.ts';
 
@@ -29,21 +29,28 @@ function vnWeek(d = new Date()) {
 const periodKey = (reset: string) => (reset === 'daily' ? vnDay() : reset === 'weekly' ? vnWeek() : 'once');
 
 // ---------- Lưu trữ ----------
-interface DB { users: Record<string, { password: string; recovery: string }>; chars: Record<string, any> }
+interface DB { users: Record<string, { password: string; email: string; reset?: { code: string; exp: number; tries: number } }>; chars: Record<string, any> }
 let db: DB = { users: {}, chars: {} };
 try { db = JSON.parse(localStorage.getItem(KEY) || 'null') || db; } catch { /* bộ nhớ trình duyệt bị chặn: chơi tạm trong phiên */ }
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch { /* bỏ qua */ } };
 
-function newCode() {
-  const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = '';
-  for (let i = 0; i < 16; i++) s += a[Math.floor(Math.random() * a.length)] + (i % 4 === 3 && i < 15 ? '-' : '');
-  return s;
-}
 
 // ---------- Nhân vật hiện tại ----------
 let currentUser = '';
 const C = () => { const c = db.chars[currentUser]; if (!c) throw new DemoError(404, 'Không tìm thấy nhân vật.'); return c; };
 export const livePos = { x: 0, z: 40 };   // vị trí do "máy chủ" ghi nhận qua kết nối realtime giả lập
+let seat: { kind: SeatKind; mat: string } | null = null;
+function needPose(rule: string) { if (POSE_RULES[rule] && !poseAllows(rule, seat)) throw bad(POSE_RULES[rule].hint, 'need_pose'); }
+
+/** Ngồi/quỳ trên bồ đoàn (kind = null: đứng dậy) */
+export function pose(kind: SeatKind | null, matId?: string): any {
+  if (!kind) { seat = null; return { t: 'pose_ok', kind: null }; }
+  const mat = MATS.find((m) => m.id === matId);
+  if (!mat) return { t: 'toast', text: 'Bồ đoàn không hợp lệ.' };
+  if (Math.hypot(livePos.x - mat.x, livePos.z - mat.z) > MAT_REACH) return { t: 'toast', text: 'Hãy đến gần bồ đoàn hơn.' };
+  seat = { kind, mat: mat.id }; livePos.x = mat.x; livePos.z = mat.z;
+  return { t: 'pose_ok', kind, mat: mat.id, x: mat.x, z: mat.z, ry: Math.atan2(mat.faceX - mat.x, mat.faceZ - mat.z) };
+}
 
 function templeOf(c: any) { return temples.find((t) => t.id === c.templeId) || temples[0]; }
 
@@ -202,7 +209,7 @@ export function startCeremonyLoop(emit: Emit) {
       if (now - lastSample >= 5000) {
         lastSample = now; cer.current.samples++;
         const z = templeOf(C()).zones;
-        const here = inAnyZone(z, ['main_hall'], livePos.x, livePos.z);
+        const here = poseAllows('ceremony', seat) && inAnyZone(z, ['main_hall'], livePos.x, livePos.z);
         if (here) cer.current.present++;
         emit({ t: 'ceremony_tick', present: here ? 1 : 0, serverNow: now });
       }
@@ -233,8 +240,15 @@ export function startCeremonyLoop(emit: Emit) {
 
 // ---------- Dấu mộc khi đi vào khu vực ----------
 let lastPosSave = 0;
-export function onMove(x: number, z: number): any | null {
+export function onMove(x: number, z: number): any[] {
+  const out: any[] = [];
+  if (seat && Math.hypot(x - livePos.x, z - livePos.z) > 0.25) { seat = null; out.push({ t: 'pose_ok', kind: null }); }
   livePos.x = x; livePos.z = z;
+  const st = stampAt(x, z);
+  if (st) out.push({ t: 'stamp', ...st });
+  return out;
+}
+function stampAt(x: number, z: number): any | null {
   const c = db.chars[currentUser]; if (!c) return null;
   c.pos = { x, z };
   if (Date.now() - lastPosSave > 3000) { lastPosSave = Date.now(); save(); }
@@ -247,6 +261,7 @@ export function onMove(x: number, z: number): any | null {
 }
 export function welcome() {
   const c = C();
+  seat = null;
   livePos.x = c.pos.x; livePos.z = c.pos.z;
   return {
     t: 'welcome', you: { id: 1, name: c.name, level: c.stats.level, title: c.title, look: {}, x: c.pos.x, z: c.pos.z, ry: 0, anim: 'idle' },
@@ -265,32 +280,51 @@ export async function demoApi(method: string, path: string, body: any): Promise<
   const [p, query] = path.split('?');
   const b = body || {};
   // Tài khoản
+  const emailOk = (e: unknown) => { const x = String(e || '').trim().toLowerCase(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(x)) throw bad('Email không hợp lệ.', 'bad_email'); return x; };
+  const byEmail = (e: string) => Object.keys(db.users).find((k) => db.users[k].email === e);
   if (p === '/auth/register') {
     const u = String(b.username || '').trim().toLowerCase();
     if (!/^[a-z0-9_.]{3,24}$/.test(u)) throw bad('Tên đăng nhập gồm 3–24 ký tự: chữ thường không dấu, số, dấu chấm hoặc gạch dưới.');
+    const email = emailOk(b.email);
     if (typeof b.password !== 'string' || b.password.length < 8) throw bad('Mật khẩu cần từ 8 đến 72 ký tự.');
     if (db.users[u]) throw bad('Tên đăng nhập đã có người dùng.');
-    const recoveryCode = newCode();
-    db.users[u] = { password: b.password, recovery: recoveryCode }; save(); currentUser = u;
-    return { token: 'demo:' + u, user: { id: 1, username: u, role: 'player' }, recoveryCode };
+    if (byEmail(email)) throw bad('Email này đã được dùng cho tài khoản khác.');
+    db.users[u] = { password: b.password, email }; save(); currentUser = u;
+    return { token: 'demo:' + u, user: { id: 1, username: u, role: 'player' } };
   }
   if (p === '/auth/login') {
     const u = String(b.username || '').trim().toLowerCase();
     if (!db.users[u] || db.users[u].password !== b.password) throw new DemoError(401, 'Sai tên đăng nhập hoặc mật khẩu.');
     currentUser = u; return { token: 'demo:' + u, user: { id: 1, username: u, role: 'player' } };
   }
-  if (p === '/auth/recover') {
-    const u = String(b.username || '').trim().toLowerCase();
-    if (!db.users[u] || db.users[u].recovery !== String(b.recoveryCode || '').trim().toUpperCase()) throw new DemoError(401, 'Tên đăng nhập hoặc mã khôi phục không đúng.');
-    const recoveryCode = newCode(); db.users[u] = { password: b.newPassword, recovery: recoveryCode }; save(); currentUser = u;
-    return { token: 'demo:' + u, user: { id: 1, username: u, role: 'player' }, recoveryCode };
+  if (p === '/auth/forgot') {
+    const email = emailOk(b.email), u = byEmail(email);
+    if (!u) return { ok: true, message: 'Nếu email này đã đăng ký, mã đặt lại mật khẩu sẽ được gửi tới. (Bản dùng thử: không tìm thấy email này trên máy.)' };
+    const code = String(Math.floor(Math.random() * 1e6)).padStart(6, '0');
+    db.users[u].reset = { code, exp: Date.now() + 15 * 60_000, tries: 0 }; save();
+    return { ok: true, message: `Bản dùng thử offline không gửi được email thật. Trên bản chính thức, mã sẽ được gửi vào ${email}. Mã của bạn: ${code}` };
+  }
+  if (p === '/auth/reset') {
+    const email = emailOk(b.email), u = byEmail(email), r = u ? db.users[u].reset : null;
+    if (!u || !r || r.exp < Date.now() || r.tries >= 5) throw bad('Mã không đúng hoặc đã hết hạn. Hãy yêu cầu mã mới.', 'bad_code');
+    if (r.code !== String(b.code || '').trim()) { r.tries++; save(); throw bad('Mã không đúng hoặc đã hết hạn. Hãy yêu cầu mã mới.', 'bad_code'); }
+    if (typeof b.newPassword !== 'string' || b.newPassword.length < 8) throw bad('Mật khẩu cần từ 8 đến 72 ký tự.');
+    db.users[u].password = b.newPassword; delete db.users[u].reset; save(); currentUser = u;
+    return { token: 'demo:' + u, user: { id: 1, username: u, role: 'player' } };
+  }
+  if (p === '/me/email') {
+    const usr = db.users[currentUser];
+    if (!usr || usr.password !== b.password) throw new DemoError(401, 'Mật khẩu không đúng.');
+    const email = emailOk(b.email);
+    const other = byEmail(email); if (other && other !== currentUser) throw bad('Email này đã được dùng cho tài khoản khác.');
+    usr.email = email; save(); return { ok: true, email };
   }
   if (p === '/servers') return [{ id: 1, code: 'demo', name: 'Bản dùng thử (offline, trên máy bạn)', capacity: 1, is_open: true, online: currentUser ? 1 : 0 }];
   if (p === '/ceremony') return ceremonyState();
   if (p === '/me') {
     if (!currentUser || !db.users[currentUser]) throw new DemoError(401, 'Phiên đăng nhập đã hết hạn.');
     const c = db.chars[currentUser];
-    return { user: { id: 1, username: currentUser, role: 'player' }, characters: c ? [{ id: 1, server_id: 1, dharma_name: c.name, level: c.stats.level }] : [] };
+    return { user: { id: 1, username: currentUser, role: 'player', email: db.users[currentUser].email || null }, characters: c ? [{ id: 1, server_id: 1, dharma_name: c.name, level: c.stats.level }] : [] };
   }
   if (p === '/characters') {
     const name = String(b.dharmaName || '').trim().replace(/\s+/g, ' ');
@@ -332,6 +366,7 @@ export async function demoApi(method: string, path: string, body: any): Promise<
   const act = r.match(/^\/act\/(\w+)$/);
   if (act) {
     if (!['prostrate', 'incense', 'candle', 'flower', 'bell'].includes(act[1])) throw bad('Hoạt động không hợp lệ.');
+    needPose(act[1]);
     const out = perform(act[1], 1); fxHook?.(act[1]); return out;
   }
   if (r === '/beads') {
@@ -349,6 +384,7 @@ export async function demoApi(method: string, path: string, body: any): Promise<
   }
   if (r === '/meditate/start' || r === '/chant/start') {
     const kind = r.startsWith('/meditate') ? 'meditate' : 'chant';
+    needPose(kind);
     let planned: number;
     if (kind === 'meditate') { if (!MEDITATION_OPTIONS.includes(Number(b.minutes))) throw bad('Thời lượng thiền không hợp lệ.'); planned = Number(b.minutes) * 60; }
     else { const s = SUTRAS.find((x) => x.code === b.code); if (!s) throw bad('Bài kinh không tồn tại.'); planned = s.minSeconds; }

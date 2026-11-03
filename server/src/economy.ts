@@ -4,7 +4,7 @@ import { one, q, tx } from './db.ts';
 import { bad, notFound, tooMany } from './errors.ts';
 import { vnDay, periodKey } from './time.ts';
 import {
-  expForLevel, COOP_BONUS, COOP_MIN_PLAYERS, SUTRAS, MEDITATION_OPTIONS, inAnyZone, type Zone,
+  expForLevel, COOP_BONUS, COOP_MIN_PLAYERS, SUTRAS, MEDITATION_OPTIONS, inAnyZone, POSE_RULES, poseAllows, type Zone,
 } from '../../shared/content.ts';
 import { players, noteCoop } from './presence.ts';
 
@@ -255,8 +255,15 @@ async function perform(db: PoolClient, ctx: Ctx, code: string, amount: number, m
   return { ok: true, rewarded, message, gains: { merit, exp, sen, ngoc: 0 }, levelUps, achievements: ach, coop: coopCount };
 }
 
+/** Nghi lễ cần ngồi/quỳ trên bồ đoàn: tư thế do kết nối realtime (server) ghi nhận */
+export function requirePose(charId: number, rule: string) {
+  if (!POSE_RULES[rule]) return;
+  if (!poseAllows(rule, players.get(charId)?.seat)) throw bad(POSE_RULES[rule].hint, 'need_pose');
+}
+
 export async function doSimple(charId: number, code: string, meta: Record<string, unknown> = {}): Promise<Outcome> {
   if (!['prostrate', 'incense', 'candle', 'flower', 'bell'].includes(code)) throw bad('Hoạt động không hợp lệ.');
+  requirePose(charId, code);
   return tx(async (db) => perform(db, await charContext(db, charId), code, 1, meta));
 }
 
@@ -283,6 +290,7 @@ export async function doBeads(charId: number, count: number): Promise<Outcome & 
 
 // ---------- Phiên đo thời gian: thiền, tụng kinh ----------
 export async function startSession(charId: number, kind: 'meditate' | 'chant', ref: string | null, plannedSec: number) {
+  requirePose(charId, kind);
   return tx(async (db) => {
     const ctx = await charContext(db, charId);
     const act = (await activities()).get(kind);

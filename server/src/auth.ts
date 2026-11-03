@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { config } from './config.ts';
 import { one, q } from './db.ts';
 import { bad, HttpError, forbidden } from './errors.ts';
+import { sendMail, mailConfigured } from './mailer.ts';
 
 export type Role = 'player' | 'support' | 'moderator' | 'game_admin' | 'super_admin';
 export const ROLE_RANK: Record<Role, number> = { player: 0, support: 1, moderator: 2, game_admin: 3, super_admin: 4 };
@@ -44,18 +45,15 @@ export function requireRole(min: Role) {
   };
 }
 
-function newRecoveryCode(): string {
-  // 4 nhóm x 4 ký tự, bỏ ký tự dễ nhầm
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const bytes = crypto.randomBytes(16);
-  let s = '';
-  for (let i = 0; i < 16; i++) s += alphabet[bytes[i] % alphabet.length] + (i % 4 === 3 && i < 15 ? '-' : '');
-  return s;
-}
-
 function checkPassword(pw: unknown): string {
   if (typeof pw !== 'string' || pw.length < 8 || pw.length > 72) throw bad('Mật khẩu cần từ 8 đến 72 ký tự.');
   return pw;
+}
+const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,24}$/;
+function checkEmail(e: unknown): string {
+  const s = String(e || '').trim().toLowerCase();
+  if (!EMAIL_RE.test(s)) throw bad('Email không hợp lệ.', 'bad_email');
+  return s;
 }
 function checkUsername(u: unknown): string {
   const s = String(u || '').trim().toLowerCase();
@@ -77,15 +75,18 @@ function fail(key: string) {
 
 export async function register(body: any) {
   const username = checkUsername(body.username);
+  const email = checkEmail(body.email);
   const password = checkPassword(body.password);
-  const exists = await one('SELECT 1 FROM users WHERE username=$1', [username]);
-  if (exists) throw bad('Tên đăng nhập đã có người dùng.', 'username_taken');
-  const recovery = newRecoveryCode();
-  const [ph, rh] = await Promise.all([bcrypt.hash(password, 10), bcrypt.hash(recovery, 10)]);
+  if (await one('SELECT 1 FROM users WHERE username=$1', [username])) throw bad('Tên đăng nhập đã có người dùng.', 'username_taken');
+  if (await one('SELECT 1 FROM users WHERE lower(email)=$1', [email])) throw bad('Email này đã được dùng cho tài khoản khác.', 'email_taken');
+  const ph = await bcrypt.hash(password, 10);
   const u = await one<any>(
-    `INSERT INTO users (username, password_hash, recovery_hash, last_login_at) VALUES ($1,$2,$3, now())
-     RETURNING id, username, role, token_version`, [username, ph, rh]);
-  return { token: signToken(u), user: { id: u.id, username: u.username, role: u.role }, recoveryCode: recovery };
+    `INSERT INTO users (username, email, password_hash, last_login_at) VALUES ($1,$2,$3, now())
+     RETURNING id, username, role, token_version`, [username, email, ph]).catch((e) => {
+    if (e.code === '23505') throw bad('Tên đăng nhập hoặc email đã có người dùng.', 'taken');
+    throw e;
+  });
+  return { token: signToken(u), user: { id: u.id, username: u.username, role: u.role } };
 }
 
 export async function login(body: any, ip: string) {
@@ -103,22 +104,63 @@ export async function login(body: any, ip: string) {
   return { token: signToken(u), user: { id: u.id, username: u.username, role: u.role } };
 }
 
-export async function recover(body: any, ip: string) {
-  const username = String(body.username || '').trim().toLowerCase();
-  const key = 'rec|' + ip + '|' + username;
-  throttle(key);
-  const code = String(body.recoveryCode || '').trim().toUpperCase();
+const RESET_TTL_MIN = 15;
+const RESET_MAX_ATTEMPTS = 5;
+const GENERIC_SENT = 'Nếu email này đã đăng ký, mã đặt lại mật khẩu sẽ được gửi tới trong ít phút. Hãy kiểm tra cả thư mục Spam.';
+
+/** Bước 1: gửi mã 6 số vào email. Luôn trả cùng một thông báo để không lộ email nào đã đăng ký. */
+export async function forgotPassword(body: any, ip: string) {
+  const email = checkEmail(body.email);
+  throttle('forgot|' + ip);
+  throttle('forgot|' + email);
+  fail('forgot|' + ip); fail('forgot|' + email);   // mỗi yêu cầu đều tính vào giới hạn
+  if (!mailConfigured()) throw new HttpError(503, 'Máy chủ chưa cấu hình gửi email. Vui lòng liên hệ quản trị viên.', 'mail_unavailable');
+  const u = await one<any>('SELECT id, username, is_banned FROM users WHERE lower(email)=$1', [email]);
+  if (!u || u.is_banned) return { ok: true, message: GENERIC_SENT };
+  const recent = await one<any>(`SELECT 1 FROM password_resets WHERE user_id=$1 AND created_at > now() - interval '60 seconds'`, [u.id]);
+  if (recent) return { ok: true, message: GENERIC_SENT };
+  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+  await q(`UPDATE password_resets SET used_at=now() WHERE user_id=$1 AND used_at IS NULL`, [u.id]);
+  await q(`INSERT INTO password_resets (user_id, code_hash, expires_at) VALUES ($1,$2, now() + ($3::int * interval '1 minute'))`,
+    [u.id, await bcrypt.hash(code, 10), RESET_TTL_MIN]);
+  await sendMail({
+    to: email,
+    subject: `Mã đặt lại mật khẩu Tâm An Online: ${code}`,
+    text: `Xin chào ${u.username},\n\nMã đặt lại mật khẩu của bạn là: ${code}\nMã có hiệu lực trong ${RESET_TTL_MIN} phút và chỉ dùng được một lần.\n\nNếu bạn không yêu cầu, hãy bỏ qua thư này; mật khẩu của bạn không thay đổi.\n\nTâm An Online`,
+    html: `<p>Xin chào <b>${u.username}</b>,</p><p>Mã đặt lại mật khẩu của bạn là:</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>Mã có hiệu lực trong ${RESET_TTL_MIN} phút và chỉ dùng được một lần.</p><p>Nếu bạn không yêu cầu, hãy bỏ qua thư này; mật khẩu của bạn không thay đổi.</p><p>Tâm An Online</p>`,
+  });
+  return { ok: true, message: GENERIC_SENT };
+}
+
+/** Bước 2: nhập mã + mật khẩu mới. Thành công thì đăng nhập luôn và thu hồi mọi phiên cũ. */
+export async function resetPassword(body: any, ip: string) {
+  const email = checkEmail(body.email);
+  const code = String(body.code || '').trim();
   const password = checkPassword(body.newPassword);
-  const u = await one<any>('SELECT * FROM users WHERE username=$1', [username]);
-  if (!u || !(await bcrypt.compare(code, u.recovery_hash))) {
-    fail(key);
-    throw new HttpError(401, 'Tên đăng nhập hoặc mã khôi phục không đúng.', 'bad_recovery');
+  throttle('reset|' + ip);
+  const invalid = () => { fail('reset|' + ip); return new HttpError(400, 'Mã không đúng hoặc đã hết hạn. Hãy yêu cầu mã mới.', 'bad_code'); };
+  if (!/^\d{6}$/.test(code)) throw invalid();
+  const u = await one<any>('SELECT id FROM users WHERE lower(email)=$1 AND NOT is_banned', [email]);
+  if (!u) throw invalid();
+  const r = await one<any>(`SELECT * FROM password_resets WHERE user_id=$1 AND used_at IS NULL AND expires_at > now() ORDER BY id DESC LIMIT 1`, [u.id]);
+  if (!r || r.attempts >= RESET_MAX_ATTEMPTS) throw invalid();
+  if (!(await bcrypt.compare(code, r.code_hash))) {
+    await q('UPDATE password_resets SET attempts = attempts + 1 WHERE id=$1', [r.id]);
+    throw invalid();
   }
-  const recovery = newRecoveryCode();
-  const [ph, rh] = await Promise.all([bcrypt.hash(password, 10), bcrypt.hash(recovery, 10)]);
-  // Đổi mật khẩu, cấp mã khôi phục mới, vô hiệu hóa các phiên cũ
-  const nu = await one<any>(`UPDATE users SET password_hash=$2, recovery_hash=$3, token_version=token_version+1 WHERE id=$1
-                            RETURNING id, username, role, token_version`, [u.id, ph, rh]);
-  attempts.delete(key);
-  return { token: signToken(nu), user: { id: nu.id, username: nu.username, role: nu.role }, recoveryCode: recovery };
+  await q('UPDATE password_resets SET used_at=now() WHERE id=$1', [r.id]);
+  const nu = await one<any>(`UPDATE users SET password_hash=$2, token_version=token_version+1 WHERE id=$1 RETURNING id, username, role, token_version`,
+    [u.id, await bcrypt.hash(password, 10)]);
+  return { token: signToken(nu), user: { id: nu.id, username: nu.username, role: nu.role } };
+}
+
+/** Đặt / đổi email khôi phục (cần mật khẩu hiện tại) */
+export async function setEmail(userId: number, body: any) {
+  const email = checkEmail(body.email);
+  const u = await one<any>('SELECT password_hash FROM users WHERE id=$1', [userId]);
+  if (!u || !(await bcrypt.compare(String(body.password || ''), u.password_hash))) throw new HttpError(401, 'Mật khẩu không đúng.', 'bad_credentials');
+  const taken = await one('SELECT 1 FROM users WHERE lower(email)=$1 AND id<>$2', [email, userId]);
+  if (taken) throw bad('Email này đã được dùng cho tài khoản khác.', 'email_taken');
+  await q('UPDATE users SET email=$2 WHERE id=$1', [userId, email]);
+  return { ok: true, email };
 }

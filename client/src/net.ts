@@ -49,7 +49,8 @@ export class Net {
   close() { this.closedByUser = true; this.ws?.close(); this.demo?.setFxHook(null); }
   send(m: any) {
     if (this.demo) {
-      if (m.t === 'move') { const st = this.demo.onMove(m.x, m.z); if (st) this.emit({ t: 'stamp', ...st }); }
+      if (m.t === 'move') { for (const x of this.demo.onMove(m.x, m.z)) this.emit(x); }
+      else if (m.t === 'pose') this.emit(this.demo.pose(m.kind ?? null, m.mat));
       else if (m.t === 'chat') {
         if (m.to) this.emit({ t: 'toast', text: 'Bản dùng thử offline chỉ có một người chơi.' });
         else this.emit(this.demo.chatEcho(String(m.body || '')));

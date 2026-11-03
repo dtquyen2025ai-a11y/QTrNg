@@ -83,10 +83,6 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; margin: 0; text
 .tabs button { flex: 1; border: 0; background: none; padding: 7px 10px; border-radius: 999px; color: var(--muted); font-weight: 600; white-space: nowrap; }
 .tabs button[aria-selected="true"] { background: var(--lacquer-3); color: var(--gold-soft); }
 .form { display: grid; gap: 12px; }
-.recovery-code {
-  font: 700 22px/1.2 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .08em; text-align: center;
-  padding: 14px; border: 1px dashed var(--gold); border-radius: 10px; color: var(--gold-soft); user-select: all; word-break: break-all;
-}
 .server-list { display: grid; gap: 8px; }
 .server-item {
   display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left;
@@ -180,10 +176,15 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; margin: 0; text
 
 .interact {
   position: absolute; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%);
-  display: flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 700; font-size: 15px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 24px);
+}
+.ibtn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 700; font-size: 15px; white-space: nowrap;
   border-radius: 999px; border: 1px solid #f2d48a; background: linear-gradient(180deg, #e7b955, #b7842c); color: #2a1709; box-shadow: 0 8px 30px rgba(0,0,0,.4);
 }
-.interact kbd { background: rgba(0,0,0,.18); border-radius: 6px; padding: 0 6px; font-family: inherit; }
+.ibtn.ghost { background: rgba(28,18,12,.85); color: var(--gold-soft); border-color: var(--line); }
+.ibtn kbd { background: rgba(0,0,0,.18); border-radius: 6px; padding: 0 6px; font-family: inherit; }
+.seat-hint { padding: 6px 12px; border-radius: 999px; background: rgba(28,18,12,.8); border: 1px solid var(--line); font-size: 13px; color: var(--gold-soft); white-space: nowrap; }
 
 .joystick { position: absolute; left: max(18px, env(safe-area-inset-left)); bottom: calc(120px + env(safe-area-inset-bottom)); width: 120px; height: 120px; border-radius: 50%; background: rgba(28,18,12,.35); border: 1px solid var(--line); touch-action: none; display: none; }
 .joystick i { position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; margin: -25px 0 0 -25px; border-radius: 50%; background: rgba(217,164,65,.55); border: 1px solid var(--gold-soft); }
@@ -199,7 +200,7 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; margin: 0; text
   .nearby { display: none; }
   .exp-bar { width: 110px; }
   .event-banner { top: auto; bottom: calc(150px + env(safe-area-inset-bottom)); }
-  .interact { bottom: calc(80px + env(safe-area-inset-bottom)); left: auto; right: max(14px, env(safe-area-inset-right)); transform: none; }
+  .interact { bottom: calc(80px + env(safe-area-inset-bottom)); left: auto; right: max(14px, env(safe-area-inset-right)); transform: none; justify-content: flex-end; }
 }
 
 .toasts.floating { position: fixed; z-index: 60; }

@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import bcrypt from 'bcryptjs';
-import crypto from 'node:crypto';
 import { pool, one } from './db.ts';
 import { config } from './config.ts';
 
@@ -36,9 +35,8 @@ async function seedAdmin(log: boolean) {
   const exists = await one('SELECT id FROM users WHERE username=$1', [config.adminUsername.toLowerCase()]);
   if (exists) return;
   const hash = await bcrypt.hash(config.adminPassword, 10);
-  const rec = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10);
-  await pool.query(`INSERT INTO users (username, password_hash, recovery_hash, role) VALUES ($1,$2,$3,'super_admin')`,
-    [config.adminUsername.toLowerCase(), hash, rec]);
+  await pool.query(`INSERT INTO users (username, email, password_hash, role) VALUES ($1,$2,$3,'super_admin')`,
+    [config.adminUsername.toLowerCase(), process.env.ADMIN_EMAIL || null, hash]);
   if (log) console.log(`[migrate] đã tạo super admin "${config.adminUsername}"`);
 }
 

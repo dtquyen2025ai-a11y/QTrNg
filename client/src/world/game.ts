@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { buildTemple, type TempleRefs } from './temple.ts';
 import { Avatar, type LookData, type ItemData } from './character.ts';
 import { THEMES, colliders, resolve, INTERACTABLES, LAKE, type Interactable } from './layout.ts';
+import { MATS, type Mat, type SeatKind } from '../../../shared/content.ts';
 
 export interface RemoteInfo { id: number; name: string; level: number; title: string | null; look: LookData; x: number; z: number; ry: number; anim: string }
 
@@ -21,8 +22,13 @@ export class World {
   yaw = 0;              // camera phía sau (Nam), nhìn vào chùa (Bắc)
   pitch = 0.32;
   dist = 7.5;
-  locked = false;       // khoá di chuyển khi đang thiền/tụng/lạy
+  locked = false;       // khoá di chuyển khi đang ngồi/quỳ hoặc thiền/tụng
   anim = 'idle';
+  seat: { kind: SeatKind; mat: string } | null = null;   // tư thế do server xác nhận
+  private activityPose: string | null = null;
+  private nearMat: Mat | null = null;
+  onNearMat: (m: Mat | null) => void = () => {};
+  onBlockedMove: () => void = () => {};
   private oneShotUntil = 0;
   private keys = new Set<string>();
   private joy = { x: 0, y: 0 };
@@ -222,6 +228,14 @@ export class World {
     this.scene.add(avatar.root);
     this.remotes.set(info.id, { info, avatar, tx: info.x, tz: info.z, tr: info.ry });
   }
+  /** Bồ đoàn đã có người khác ngồi (theo vị trí và hoạt ảnh người chơi khác) */
+  private matTaken(id: string) {
+    const m = MATS.find((x) => x.id === id)!;
+    for (const r of this.remotes.values()) {
+      if (['sit', 'kneel', 'prostrate', 'meditate', 'chant'].includes(r.info.anim) && Math.hypot(r.tx - m.x, r.tz - m.z) < 0.3) return true;
+    }
+    return false;
+  }
   removeRemote(id: number) {
     const r = this.remotes.get(id); if (!r) return;
     this.scene.remove(r.avatar.root); r.avatar.dispose(); this.remotes.delete(id);
@@ -242,13 +256,28 @@ export class World {
   correct(x: number, z: number) { this.pos.set(x, 0, z); }
 
   // ---------- Hoạt ảnh của mình ----------
+  /** Server xác nhận ngồi/quỳ (kind = null: đứng dậy) */
+  applySeat(kind: SeatKind | null, mat?: string, x?: number, z?: number, ry?: number) {
+    if (kind && mat) {
+      this.seat = { kind, mat };
+      if (x != null && z != null) this.pos.set(x, 0, z);
+      if (ry != null) this.ry = ry;
+    } else this.seat = null;
+    this.activityPose = null; this.oneShotUntil = 0;
+    this.locked = !!this.seat;
+    this.anim = this.seat?.kind || 'idle'; this.me.setAnim(this.anim);
+    this.nearMat = null; this.onNearMat(null);
+  }
+  private baseAnim() { return this.activityPose || this.seat?.kind || 'idle'; }
+
   playOneShot(anim: string, seconds: number) {
     this.anim = anim; this.me.setAnim(anim); this.oneShotUntil = performance.now() + seconds * 1000;
     this.onMove(this.pos.x, this.pos.z, this.ry, anim);
   }
   setPose(anim: string | null) {
-    this.locked = !!anim;
-    this.anim = anim || 'idle'; this.me.setAnim(this.anim); this.oneShotUntil = 0;
+    this.activityPose = anim;
+    this.locked = !!anim || !!this.seat;
+    this.anim = this.baseAnim(); this.me.setAnim(this.anim); this.oneShotUntil = 0;
     this.onMove(this.pos.x, this.pos.z, this.ry, this.anim);
   }
   faceTowards(x: number, z: number) { this.ry = Math.atan2(x - this.pos.x, z - this.pos.z); }
@@ -322,14 +351,16 @@ export class World {
   };
 
   private updateMovement(dt: number, now: number) {
-    if (this.oneShotUntil && now > this.oneShotUntil) { this.oneShotUntil = 0; this.anim = 'idle'; this.me.setAnim('idle'); this.onMove(this.pos.x, this.pos.z, this.ry, 'idle'); }
+    if (this.oneShotUntil && now > this.oneShotUntil) { this.oneShotUntil = 0; this.anim = this.baseAnim(); this.me.setAnim(this.anim); this.onMove(this.pos.x, this.pos.z, this.ry, this.anim); }
     let fx = 0, fz = 0;
-    if (!this.locked && !this.oneShotUntil) {
-      if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) fz += 1;
-      if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) fz -= 1;
-      if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) fx -= 1;
-      if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) fx += 1;
-      fx += this.joy.x; fz += this.joy.y;
+    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) fz += 1;
+    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) fz -= 1;
+    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) fx -= 1;
+    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) fx += 1;
+    fx += this.joy.x; fz += this.joy.y;
+    if (this.locked || this.oneShotUntil) {
+      if (Math.hypot(fx, fz) > 0.3 && this.locked) this.onBlockedMove();
+      fx = 0; fz = 0;
     }
     const mag = Math.min(1, Math.hypot(fx, fz));
     if (mag > 0.08) {
@@ -364,6 +395,16 @@ export class World {
     }
     this.me.root.position.copy(this.pos);
     this.me.root.rotation.y = this.ry;
+    // bồ đoàn gần nhất (khi đang đứng)
+    let mat: Mat | null = null;
+    if (!this.seat) {
+      let md = 1.3;
+      for (const m of MATS) {
+        const d = Math.hypot(this.pos.x - m.x, this.pos.z - m.z);
+        if (d < md && !this.matTaken(m.id)) { md = d; mat = m; }
+      }
+    }
+    if (mat !== this.nearMat) { this.nearMat = mat; this.onNearMat(mat); }
     // tương tác gần nhất
     let best: Interactable | null = null, bd = Infinity;
     for (const it of INTERACTABLES) {

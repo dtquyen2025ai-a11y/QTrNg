@@ -47,16 +47,16 @@ Trạng thái: ✅ có trong MVP · 🟡 có một phần · ⏳ kế hoạch gi
 | Tính năng | Trạng thái | Ghi chú |
 |---|---|---|
 | Đăng ký / đăng nhập (tên đăng nhập + mật khẩu) | ✅ | bcrypt, JWT |
-| Quên mật khẩu / khôi phục tài khoản | ✅ | Bằng **mã khôi phục** cấp lúc đăng ký (không cần email) |
+| Quên mật khẩu / khôi phục tài khoản | ✅ | **Mã 6 số gửi qua email**: hạn 15 phút, dùng 1 lần, sai 5 lần thì khoá mã, phản hồi giống nhau để không lộ email đã đăng ký. Đổi email khôi phục trong Menu. |
 | Chọn máy chủ | ✅ | Bảng `servers`, mỗi máy chủ là một phòng multiplayer riêng |
 | Tiếp tục chơi | ✅ | Ghi nhớ phiên đăng nhập trên thiết bị |
 | Đăng nhập Google/Facebook | ⏳ | Cần OAuth client ID của chủ dự án. **Không hiển thị nút** cho tới khi có. |
-| Khôi phục qua email | ⏳ | Cần dịch vụ gửi mail |
 
 ### 2.2 Nhân vật
 | Tính năng | Trạng thái |
 |---|---|
 | Pháp danh (duy nhất, kiểm duyệt từ cấm) | ✅ |
+| Dáng **lật đật**: thân tròn, áo tràng xòe che kín chân (nam và nữ cùng dáng, khác kiểu tóc); lắc lư khi đi | ✅ |
 | Giới tính, kiểu tóc, màu da, màu áo tràng | ✅ |
 | Xem trước nhân vật 3D, xoay được | ✅ |
 | Đổi trang phục bằng vật phẩm trong túi đồ | ✅ |
@@ -76,10 +76,11 @@ Trạng thái: ✅ có trong MVP · 🟡 có một phần · ⏳ kế hoạch gi
 ### 2.4 Gameplay tu tập
 | Hoạt động | Trạng thái | Nơi thực hiện |
 |---|---|---|
-| Lạy Phật (hoạt ảnh quỳ, cúi) | ✅ | Trong chánh điện |
+| **Ngồi xuống / Quỳ xuống** trên bồ đoàn (32 bồ đoàn; server giữ chỗ, đi khỏi thì tự đứng dậy) | ✅ | Chánh điện, Rừng trúc thiền, Giảng đường |
+| Lạy Phật (cúi rạp từ tư thế quỳ) | ✅ | **Quỳ** trên bồ đoàn trong Chánh điện |
 | Lần tràng hạt 108 | ✅ | Mọi nơi |
-| Thiền định (5/10/15/30 phút, nhịp thở) | ✅ | Khu thiền hoặc bồ đoàn |
-| Tụng kinh (đọc theo dòng, đếm tiến trình) | ✅ | Giảng đường |
+| Thiền định (5/10/15/30 phút, nhịp thở) | ✅ | **Ngồi** trên bồ đoàn ở khu thiền hoặc Chánh điện |
+| Tụng kinh (đọc theo dòng, đếm tiến trình) | ✅ | **Ngồi hoặc quỳ** trên bồ đoàn ở Giảng đường hoặc Chánh điện |
 | Thắp hương, thắp nến, dâng hoa | ✅ | Lư hương, bàn thờ |
 | Thỉnh chuông | ✅ | Gác chuông |
 | Thả hoa đăng (mọi người cùng thấy) | ✅ | Hồ hoa đăng |

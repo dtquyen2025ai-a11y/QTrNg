@@ -7,11 +7,13 @@ import { lookOf, recentLanterns, isBlockedEither } from './game.ts';
 import { stampZone, bumpMetric } from './economy.ts';
 import { tx } from './db.ts';
 import { ceremonyState } from './ceremony.ts';
-import { MAX_SPEED, WORLD_BOUND, filterText, zoneAt, type Zone } from '../../shared/content.ts';
+import { MAX_SPEED, WORLD_BOUND, filterText, zoneAt, MATS, MAT_REACH, type Zone } from '../../shared/content.ts';
 
 const TICK_MS = 100;
 const SAVE_MS = 10_000;
-const ANIMS = new Set(['idle', 'walk', 'run', 'prostrate', 'meditate', 'chant', 'bead', 'offer', 'bell']);
+const ANIMS = new Set(['idle', 'walk', 'run', 'prostrate', 'meditate', 'chant', 'bead', 'offer', 'bell', 'sit', 'kneel']);
+// Hoạt ảnh chỉ hợp lệ khi đang ngồi/quỳ trên bồ đoàn
+const SEATED_ANIMS = new Set(['sit', 'kneel', 'prostrate', 'meditate', 'chant', 'bead']);
 
 const templeZones = new Map<number, Zone[]>();
 async function zonesOf(templeId: number): Promise<Zone[]> {
@@ -63,7 +65,7 @@ export function attachRealtime(server: Server) {
         charId: c.id, userId: user.id, serverId: c.server_id, templeId: c.temple_id, name: c.dharma_name, level: c.level,
         title: c.title_code, look: await lookOf(c), x: c.pos_x, z: c.pos_z, ry: c.rot_y, anim: 'idle',
         lastMoveAt: Date.now(), dirty: true, ws, chatTimes: [], lastChat: '',
-        stamped: new Set(stamps.map((s) => s.zone_code)), blocked: new Set(blocked.map((b) => b.friend_id)),
+        stamped: new Set(stamps.map((s) => s.zone_code)), blocked: new Set(blocked.map((b) => b.friend_id)), seat: null,
       };
       players.set(c.id, me);
       const others = roomPlayers(me.serverId, me.templeId).filter((p) => p.charId !== me!.charId);
@@ -146,19 +148,41 @@ async function handle(p: Player, m: any) {
         send(p, { t: 'correct', x: p.x, z: p.z });
         return;
       }
+      // Rời bồ đoàn thì tự đứng dậy
+      if (p.seat && Math.hypot(x - p.x, z - p.z) > 0.25) { p.seat = null; send(p, { t: 'pose_ok', kind: null }); }
       p.x = x; p.z = z; p.ry = ry;
-      if (typeof m.a === 'string' && ANIMS.has(m.a)) p.anim = m.a;
+      if (typeof m.a === 'string' && ANIMS.has(m.a) && (p.seat || !SEATED_ANIMS.has(m.a) || m.a === 'bead')) p.anim = m.a;
       p.dirty = true;
       checkZone(p).catch(() => {});
       return;
     }
     case 'anim': {
-      if (typeof m.a === 'string' && ANIMS.has(m.a)) { p.anim = m.a; p.dirty = true; }
+      if (typeof m.a === 'string' && ANIMS.has(m.a) && (p.seat || !SEATED_ANIMS.has(m.a) || m.a === 'bead')) { p.anim = m.a; p.dirty = true; }
       return;
     }
+    case 'pose': return pose(p, m);
     case 'chat': return chat(p, m);
     case 'ping': return send(p, { t: 'pong', at: m.at });
   }
+}
+
+/** Ngồi / quỳ trên bồ đoàn, hoặc đứng dậy (kind = null) */
+function pose(p: Player, m: any) {
+  if (m.kind == null) {
+    p.seat = null; p.anim = 'idle'; p.dirty = true;
+    return send(p, { t: 'pose_ok', kind: null });
+  }
+  if (m.kind !== 'sit' && m.kind !== 'kneel') return;
+  const mat = MATS.find((x) => x.id === m.mat);
+  if (!mat) return send(p, { t: 'toast', text: 'Bồ đoàn không hợp lệ.' });
+  if (Math.hypot(p.x - mat.x, p.z - mat.z) > MAT_REACH) return send(p, { t: 'toast', text: 'Hãy đến gần bồ đoàn hơn.' });
+  for (const o of players.values()) {
+    if (o !== p && o.serverId === p.serverId && o.templeId === p.templeId && o.seat?.mat === mat.id) return send(p, { t: 'toast', text: 'Bồ đoàn này đã có người. Mời chọn bồ đoàn khác.' });
+  }
+  p.seat = { kind: m.kind, mat: mat.id };
+  p.x = mat.x; p.z = mat.z; p.ry = Math.atan2(mat.faceX - mat.x, mat.faceZ - mat.z);
+  p.anim = m.kind; p.dirty = true;
+  send(p, { t: 'pose_ok', kind: m.kind, mat: mat.id, x: p.x, z: p.z, ry: p.ry });
 }
 
 async function chat(p: Player, m: any) {

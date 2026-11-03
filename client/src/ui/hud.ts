@@ -5,7 +5,7 @@ import { Net } from '../net.ts';
 import { World, type RemoteInfo } from '../world/game.ts';
 import { INTERACTABLES, HALL, CHANT_HALL, POND, LAKE, URN, BELL, MEDITATION, BOUNDS, GATE_Z, type Interactable } from '../world/layout.ts';
 import * as sfx from '../audio.ts';
-import { SUTRAS, MEDITATION_OPTIONS, zoneAt, ceremonyProgram, ceremonyLineAt, CEREMONY_HOURS, CEREMONY_ATTEND_RATIO, type Zone } from '../../../shared/content.ts';
+import { SUTRAS, MEDITATION_OPTIONS, zoneAt, ceremonyProgram, ceremonyLineAt, CEREMONY_HOURS, CEREMONY_ATTEND_RATIO, POSE_RULES, poseAllows, type Zone, type Mat, type SeatKind } from '../../../shared/content.ts';
 
 type State = any;
 const PERIODS: [string, string][] = [['daily', 'Ngày'], ['weekly', 'Tuần'], ['special', 'Đặc biệt'], ['pilgrimage', 'Hành hương'], ['community', 'Cộng đồng']];
@@ -23,6 +23,8 @@ export class GameUI {
   private drawer: HTMLElement | null = null;
   private drawerName = '';
   private nearest: Interactable | null = null;
+  private nearMat: Mat | null = null;
+  private lastBlockedHint = 0;
   private zone: Zone | null = null;
   private chatTab: 'public' | number = 'public';
   private chatLog: { kind: 'chat' | 'pm' | 'sys'; id?: number; fromId?: number; from?: string; to?: string; toId?: number; body: string }[] = [];
@@ -52,6 +54,12 @@ export class GameUI {
     this.world.onNearest = (i) => { this.nearest = i; this.renderInteract(); };
     this.world.onMove = (x, z, ry, a) => { this.net?.move(x, z, ry, a); this.updateZone(x, z); };
     this.world.onPickPlayer = (id) => this.playerCard(id);
+    this.world.onNearMat = (m) => { this.nearMat = m; this.renderInteract(); };
+    this.world.onBlockedMove = () => {
+      if (Date.now() - this.lastBlockedHint < 4000) return;
+      this.lastBlockedHint = Date.now();
+      toast(this.session ? 'Đang hành lễ. Kết thúc buổi lễ trước khi đứng dậy.' : 'Bạn đang ngồi trên bồ đoàn. Bấm E hoặc nút "Đứng dậy" để đi lại.');
+    };
     if (import.meta.env.VITE_DEMO) (window as any).__pos = () => [this.world.pos.x, this.world.pos.z];
     this.buildHud();
     this.els.zone.textContent = c.temple.name;
@@ -96,6 +104,16 @@ export class GameUI {
     net.on('look', (m) => { if (m.id !== this.charId) this.world.remoteLook(m.id, m.look); });
     net.on('title', (m) => { if (m.id !== this.charId) this.world.remoteTitle(m.id, m.title); });
     net.on('correct', (m) => this.world.correct(m.x, m.z));
+    net.on('pose_ok', (m) => {
+      this.world.applySeat(m.kind, m.mat, m.x, m.z, m.ry);
+      // Đứng dậy giữa chừng thì kết thúc buổi thiền / tụng kinh
+      if (!m.kind && this.session?.kind === 'meditate') this.finishMeditation();
+      if (!m.kind && this.session?.kind === 'chant') this.endChant();
+      if (!m.kind && this.cerChanting) this.cerChanting = false;
+      if (m.kind) sfx.woodBlock(0.4);
+      this.renderInteract();
+      if (this.drawerName === 'ceremony') this.ceremonyPanel();
+    });
     net.on('online', (m) => { this.els.online.textContent = `${m.n} đạo hữu online`; });
     net.on('chat', (m) => this.pushChat({ kind: 'chat', id: m.id, fromId: m.from.id, from: m.from.name, body: m.body }));
     net.on('pm', (m) => this.pushChat({ kind: 'pm', id: m.id, fromId: m.from.id, from: m.from.name, to: m.to.name, toId: m.to.id, body: m.body }));
@@ -146,7 +164,7 @@ export class GameUI {
     e.tracker = h('div', { class: 'tracker panel-glass' });
     this.hud.appendChild(e.tracker);
     this.buildChat();
-    e.interact = h('button', { class: 'interact hidden', onclick: () => this.interact() });
+    e.interact = h('div', { class: 'interact hidden' });
     this.hud.appendChild(e.interact);
     // Joystick ảo (điện thoại)
     const knob = h('i');
@@ -190,7 +208,7 @@ export class GameUI {
     const map: Record<string, () => void> = {
       Digit1: () => this.doAct('prostrate'), Digit2: () => this.openDrawer('beads'), Digit3: () => this.openDrawer('meditate'), Digit4: () => this.openDrawer('chant'),
       KeyJ: () => this.openDrawer('missions'), KeyC: () => this.openDrawer('profile'), KeyB: () => this.openDrawer('shop'), KeyF: () => this.openDrawer('community'),
-      KeyM: () => this.openDrawer('pilgrimage'), KeyL: () => this.openDrawer('ceremony'), KeyE: () => this.interact(), Enter: () => (this.els.chatInput as HTMLInputElement).focus(),
+      KeyM: () => this.openDrawer('pilgrimage'), KeyL: () => this.openDrawer('ceremony'), KeyQ: () => this.seatDown('kneel'), KeyE: () => this.interact(), Enter: () => (this.els.chatInput as HTMLInputElement).focus(),
       Escape: () => (this.drawer ? this.closeDrawer() : this.openDrawer('menu')),
       Space: () => { if (this.drawerName === 'beads') this.tapBead(); },
     };
@@ -260,11 +278,28 @@ export class GameUI {
   }
 
   private renderInteract() {
-    const b = this.els.interact, it = this.nearest;
-    b.classList.toggle('hidden', !it || this.world.locked);
-    if (!it) return;
+    const b = this.els.interact, it = this.nearest, seat = this.world?.seat;
     clear(b);
-    b.append(h('kbd', null, 'E'), it.label);
+    const btn = (key: string, label: string, fn: () => void, cls = '') => h('button', { class: 'ibtn ' + cls, onclick: fn }, h('kbd', null, key), label);
+    if (seat) {
+      // Đang ngồi/quỳ: gợi ý nghi lễ làm được ở tư thế này
+      const can = [['prostrate', '1 Lạy Phật'], ['meditate', '3 Thiền'], ['chant', '4 Tụng kinh']].filter(([r]) => poseAllows(r, seat)).map(([, l]) => l);
+      b.append(h('span', { class: 'seat-hint' }, `${seat.kind === 'kneel' ? 'Đang quỳ' : 'Đang ngồi'}${can.length ? ' · ' + can.join(' · ') : ''}`),
+        btn('E', 'Đứng dậy', () => this.standUp(), 'ghost'));
+    } else if (this.nearMat && !this.world.locked) {
+      b.append(h('span', { class: 'seat-hint' }, 'Bồ đoàn'), btn('E', 'Ngồi xuống', () => this.seatDown('sit')), btn('Q', 'Quỳ xuống', () => this.seatDown('kneel')));
+    } else if (it && !this.world?.locked) {
+      b.append(btn('E', it.label, () => this.interact()));
+    }
+    b.classList.toggle('hidden', !b.childElementCount);
+  }
+  private seatDown(kind: SeatKind) {
+    if (!this.nearMat || this.world.seat) return;
+    this.net.send({ t: 'pose', kind, mat: this.nearMat.id });
+  }
+  private standUp() {
+    if (this.session) return toast(this.session.kind === 'meditate' ? 'Bấm "Xả thiền" để kết thúc buổi thiền trước.' : 'Bấm "Dừng" để kết thúc thời kinh trước.');
+    this.net.send({ t: 'pose', kind: null });
   }
 
   // ---------- Minimap ----------
@@ -374,10 +409,12 @@ export class GameUI {
   // ---------- Hoạt động ----------
   private outcomeBusy = false;
   async doAct(code: string) {
-    if (this.world.locked) return toast('Hãy kết thúc hoạt động hiện tại trước.');
+    if (this.session) return toast('Hãy kết thúc hoạt động hiện tại trước.');
+    if (POSE_RULES[code] && !poseAllows(code, this.world.seat)) return toast(POSE_RULES[code].hint, 'bad');
+    if (!POSE_RULES[code] && this.world.seat) return toast('Hãy đứng dậy trước (phím E).');
     if (this.outcomeBusy) return;
     const target = ACT_TARGET[code];
-    if (target) this.world.faceTowards(target[0], target[1]);
+    if (target && !this.world.seat) this.world.faceTowards(target[0], target[1]);
     this.outcomeBusy = true;
     try {
       const r = await api(`/c/${this.charId}/act/${code}`, {});
@@ -402,6 +439,8 @@ export class GameUI {
   }
 
   private interact() {
+    if (this.world.seat) return this.standUp();
+    if (this.nearMat && !this.world.locked) return this.seatDown('sit');
     const it = this.nearest;
     if (!it || this.world.locked) return;
     if (it.action === 'act') this.doAct(it.code);
@@ -530,10 +569,11 @@ export class GameUI {
       const draw = () => { clear(chips); for (const m of MEDITATION_OPTIONS) chips.appendChild(h('button', { class: 'chip', 'aria-pressed': String(m === minutes), onclick: () => { minutes = m; draw(); } }, `${m} phút`)); };
       draw();
       return h('div', { class: 'list' },
-        h('p', { class: 'muted', style: { margin: 0 } }, 'Ngồi thiền ở Rừng trúc thiền hoặc trên bồ đoàn trong Chánh điện. Thời gian được đo trên máy chủ.'),
+        h('p', { class: 'muted', style: { margin: 0 } }, 'Đến bồ đoàn ở Rừng trúc thiền hoặc trong Chánh điện, chọn "Ngồi xuống" rồi bắt đầu. Thời gian được đo trên máy chủ.'),
         h('div', { class: 'section-title' }, 'Thời lượng'), chips,
         h('button', { class: 'btn gold big-btn', onclick: async () => {
           try {
+            if (!poseAllows('meditate', this.world.seat)) return toast(POSE_RULES.meditate.hint, 'bad');
             await api(`/c/${this.charId}/meditate/start`, { minutes });
             this.session = { kind: 'meditate', ends: Date.now() + minutes * 60_000 };
             this.world.setPose('meditate');
@@ -580,7 +620,7 @@ export class GameUI {
   private chantPanel() {
     if (this.session?.kind === 'chant') return;
     this.shell('Tụng kinh', null, () => h('div', { class: 'list' },
-      h('p', { class: 'muted', style: { margin: 0 } }, 'Tụng tại Giảng đường hoặc Chánh điện. Mỗi dòng được đánh dấu theo nhịp đọc; hoàn tất khi đọc trọn bài.'),
+      h('p', { class: 'muted', style: { margin: 0 } }, 'Ngồi hoặc quỳ trên bồ đoàn ở Giảng đường hoặc Chánh điện rồi chọn bài. Mỗi dòng được đánh dấu theo nhịp đọc; hoàn tất khi đọc trọn bài.'),
       SUTRAS.map((s) => h('div', { class: 'item' },
         h('div', { class: 'title' }, s.name),
         h('div', { class: 'desc' }, `${s.lines.length} dòng · tối thiểu ${s.minSeconds} giây · ${s.note}`),
@@ -588,6 +628,7 @@ export class GameUI {
   }
   private async startChant(code: string) {
     const s = SUTRAS.find((x) => x.code === code)!;
+    if (!poseAllows('chant', this.world.seat)) return toast(POSE_RULES.chant.hint, 'bad');
     try { await api(`/c/${this.charId}/chant/start`, { code }); } catch (ex: any) { return toast(ex.message, 'bad'); }
     this.session = { kind: 'chant' };
     this.world.setPose('chant');
@@ -681,8 +722,8 @@ export class GameUI {
       const sit = h('button', { class: 'btn gold big-btn' });
       sit.onclick = () => {
         if (this.cerChanting) { this.cerChanting = false; this.world.setPose(null); }
-        else if (this.zone?.code !== 'main_hall') return toast('Hãy vào Chánh điện để tham dự đại lễ.', 'bad');
-        else { this.cerChanting = true; this.world.faceTowards(0, -22); this.world.setPose('chant'); }
+        else if (!poseAllows('ceremony', this.world.seat)) return toast(POSE_RULES.ceremony.hint, 'bad');
+        else { this.cerChanting = true; this.world.setPose('chant'); }
         paint();
       };
       const paint = () => {
@@ -696,8 +737,8 @@ export class GameUI {
           ps.forEach((p, i) => { p.classList.toggle('read', i < idx); p.classList.toggle('current', i === idx); });
           ps[Math.min(idx, ps.length - 1)]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
         }
-        const inHall = this.zone?.code === 'main_hall';
-        status.textContent = `${inHall ? 'Bạn đang ở Chánh điện, đang được ghi nhận.' : 'Bạn đang ở ngoài Chánh điện, chưa được ghi nhận. Hãy đi vào trong.'} · ${this.cerPresent} đạo hữu trong Chánh điện · còn ${this.dur(cur.endAt - now)}${cur.mult > 1 ? ' · công đức x' + cur.mult : ''}`;
+        const inHall = this.zone?.code === 'main_hall' && poseAllows('ceremony', this.world.seat);
+        status.textContent = `${inHall ? 'Bạn đang ngồi trên bồ đoàn trong Chánh điện, đang được ghi nhận.' : 'Chưa được ghi nhận: hãy vào Chánh điện, ngồi hoặc quỳ trên bồ đoàn.'} · ${this.cerPresent} đạo hữu trong Chánh điện · còn ${this.dur(cur.endAt - now)}${cur.mult > 1 ? ' · công đức x' + cur.mult : ''}`;
         status.style.borderLeftColor = inHall ? 'var(--ok)' : 'var(--danger)';
         sit.textContent = this.cerChanting ? 'Đứng dậy' : 'Ngồi tụng cùng đại chúng';
       };
@@ -1007,11 +1048,29 @@ export class GameUI {
       h('div', { class: 'section-title' }, 'Điều khiển'),
       h('table', { class: 'simple' }, h('tbody', null, [
         ['W A S D / mũi tên', 'Di chuyển (giữ Shift để đi nhanh)'], ['Kéo chuột', 'Xoay camera'], ['Cuộn chuột', 'Phóng to / thu nhỏ'], ['E', 'Tương tác'],
-        ['1 2 3 4', 'Lạy Phật · Tràng hạt · Thiền · Tụng kinh'], ['L', 'Đại lễ cộng tu'], ['Space', 'Lần hạt khi mở tràng hạt'], ['Enter', 'Chat'], ['J C B F M', 'Nhiệm vụ · Hồ sơ · Cửa hàng · Cộng đồng · Hành hương'],
+        ['E / Q', 'Ngồi xuống / Quỳ xuống trên bồ đoàn (E lần nữa để đứng dậy)'], ['1 2 3 4', 'Lạy Phật (khi quỳ) · Tràng hạt · Thiền (khi ngồi) · Tụng kinh'], ['L', 'Đại lễ cộng tu'], ['Space', 'Lần hạt khi mở tràng hạt'], ['Enter', 'Chat'], ['J C B F M', 'Nhiệm vụ · Hồ sơ · Cửa hàng · Cộng đồng · Hành hương'],
         ['Điện thoại', 'Cần điều khiển trái, vuốt để xoay, chụm 2 ngón để zoom'],
       ].map(([k, v]) => h('tr', null, h('td', null, h('b', null, k)), h('td', null, v))))),
+      h('div', { class: 'section-title' }, 'Email khôi phục mật khẩu'),
+      this.emailSection(),
       h('button', { class: 'btn', onclick: () => this.exit('servers') }, 'Đổi máy chủ'),
       h('button', { class: 'btn danger', onclick: () => this.exit('logout') }, 'Đăng xuất'));
+  }
+
+  private emailSection(): Node {
+    const cur = h('div', { class: 'muted' }, 'Đang tải…');
+    api('/me').then((r) => { cur.textContent = r.user.email ? `Hiện tại: ${r.user.email}` : 'Tài khoản chưa có email. Hãy thêm để lấy lại mật khẩu khi quên.'; }).catch(() => { cur.textContent = ''; });
+    const email = h('input', { class: 'input', id: 'me-email', type: 'email', autocomplete: 'email', placeholder: 'ban@example.com' }) as HTMLInputElement;
+    const pw = h('input', { class: 'input', id: 'me-pass', type: 'password', autocomplete: 'current-password', placeholder: 'Mật khẩu hiện tại' }) as HTMLInputElement;
+    const err = h('div', { class: 'error' });
+    return h('form', { class: 'form', onsubmit: async (e: Event) => {
+      e.preventDefault(); err.textContent = '';
+      try { const r = await api('/me/email', { email: email.value, password: pw.value }); cur.textContent = `Hiện tại: ${r.email}`; pw.value = ''; toast('Đã lưu email khôi phục.', 'good'); }
+      catch (ex: any) { err.textContent = ex.message; }
+    } }, cur,
+      h('div', { class: 'field' }, h('label', { for: 'me-email' }, 'Email mới'), email),
+      h('div', { class: 'field' }, h('label', { for: 'me-pass' }, 'Xác nhận bằng mật khẩu'), pw), err,
+      h('button', { class: 'btn small primary', type: 'submit' }, 'Lưu email'));
   }
 
   // ---------- Thoát ----------

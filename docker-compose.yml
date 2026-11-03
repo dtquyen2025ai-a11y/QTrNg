@@ -25,6 +25,11 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Thiếu JWT_SECRET}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Thiếu ADMIN_PASSWORD}
+      SMTP_HOST: ${SMTP_HOST:?Thiếu SMTP_HOST (gửi email đặt lại mật khẩu)}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
     expose: ["8080"]
 
   # HTTPS tự động (Let's Encrypt) + chuyển tiếp WebSocket

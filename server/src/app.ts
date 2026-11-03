@@ -1,7 +1,8 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
-import { register, login, recover, requireAuth } from './auth.ts';
+import { register, login, forgotPassword, resetPassword, setEmail, requireAuth } from './auth.ts';
+import { one as dbOne } from './db.ts';
 import { HttpError, bad } from './errors.ts';
 import * as G from './game.ts';
 import * as E from './economy.ts';
@@ -27,13 +28,18 @@ export function createApp() {
 
   api.post('/auth/register', async (req, res) => res.json(await register(req.body)));
   api.post('/auth/login', async (req, res) => res.json(await login(req.body, req.ip || '')));
-  api.post('/auth/recover', async (req, res) => res.json(await recover(req.body, req.ip || '')));
+  api.post('/auth/forgot', async (req, res) => res.json(await forgotPassword(req.body, req.ip || '')));
+  api.post('/auth/reset', async (req, res) => res.json(await resetPassword(req.body, req.ip || '')));
+  api.post('/me/email', requireAuth, async (req, res) => res.json(await setEmail(req.user!.id, req.body)));
 
   api.get('/servers', async (_req, res) => res.json(await G.listServers()));
   api.get('/sutras', (_req, res) => res.json(SUTRAS));
   api.get('/ceremony', (_req, res) => res.json(ceremonyState()));
 
-  api.get('/me', requireAuth, async (req, res) => res.json({ user: req.user, characters: await G.myCharacters(req.user!.id) }));
+  api.get('/me', requireAuth, async (req, res) => {
+    const u = await dbOne<any>('SELECT email FROM users WHERE id=$1', [req.user!.id]);
+    res.json({ user: { ...req.user, email: u?.email || null }, characters: await G.myCharacters(req.user!.id) });
+  });
   api.post('/characters', requireAuth, async (req, res) => {
     const c = await G.createCharacter(req.user!.id, req.body);
     res.json({ id: c.id });

@@ -121,7 +121,6 @@ export const INTERACTABLES: Interactable[] = [
   { id: 'bell', label: 'Thỉnh chuông', x: BELL.x, z: BELL.z, r: 3.6, action: 'act', code: 'bell' },
   { id: 'candle', label: 'Thắp nến', x: -2.6, z: -18, r: 2.2, action: 'act', code: 'candle' },
   { id: 'flower', label: 'Dâng hoa', x: 2.6, z: -18, r: 2.2, action: 'act', code: 'flower' },
-  { id: 'altar', label: 'Lạy Phật', x: 0, z: -13, r: 6.5, action: 'act', code: 'prostrate' },
   { id: 'lake', label: 'Thả hoa đăng', x: LAKE.x, z: LAKE.z, r: LAKE.r + 2.6, action: 'panel', code: 'lantern' },
   { id: 'meditation', label: 'Ngồi thiền', x: MEDITATION.x, z: MEDITATION.z, r: 5, action: 'panel', code: 'meditate' },
   { id: 'chant', label: 'Tụng kinh', x: CHANT_HALL.cx, z: CHANT_HALL.cz, r: 5.5, action: 'panel', code: 'chant' },

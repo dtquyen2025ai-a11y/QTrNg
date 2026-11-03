@@ -28,25 +28,32 @@ async function newPlayer(browser, user, dharma, viewport = { width: 1280, height
   await page.goto(BASE + '/' + query);
   await page.getByRole('tab', { name: 'Đăng ký' }).click();
   await page.fill('#auth-user', user);
+  await page.fill('#auth-email', user + '@example.com');
   await page.fill('#auth-pass', 'matkhau123');
   await page.getByRole('button', { name: 'Tạo tài khoản' }).click();
-  await page.waitForSelector('.recovery-code');
-  const code = await page.textContent('.recovery-code');
-  await page.check('#saved');
-  await page.getByRole('button', { name: 'Tiếp tục' }).click();
   await page.getByRole('button', { name: /Máy chủ Tâm An 1/ }).click();
   await page.fill('#dharma', dharma);
   await page.getByRole('button', { name: 'Tóc dài' }).click();
   await page.getByRole('button', { name: 'Xác nhận tạo nhân vật' }).click();
   await page.waitForSelector('.quickbar', { timeout: 120000 });
   await page.waitForFunction(() => !document.querySelector('.loading'));
-  return { ctx, page, errors, code, kicked };
+  return { ctx, page, errors, kicked };
 }
 
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 try {
   const A = await newPlayer(browser, 'e2ea' + stamp, 'Minh Tâm ' + Tag);
-  check('Đăng ký hiển thị mã khôi phục', /^[A-Z0-9]{4}(-[A-Z0-9]{4}){3}$/.test(A.code.trim()), A.code);
+  // Quên mật khẩu: giao diện gửi mã qua email (mã thật kiểm ở test tích hợp)
+  {
+    const fp = await (await browser.newContext()).newPage();
+    await fp.goto(BASE + '/');
+    await fp.getByRole('tab', { name: 'Quên mật khẩu' }).click();
+    await fp.fill('#auth-email', 'e2ea' + stamp + '@example.com');
+    await fp.getByRole('button', { name: 'Gửi mã qua email' }).click();
+    await fp.waitForSelector('#auth-code');
+    check('Quên mật khẩu: gửi mã qua email và hiện bước nhập mã', (await fp.textContent('.note')).includes('email'));
+    await fp.close();
+  }
   check('Vào game, HUD hiển thị', await A.page.isVisible('.top-left'));
   await A.page.waitForTimeout(1500);
   await A.page.screenshot({ path: `${OUT}/01-vao-chua.png` });
@@ -58,26 +65,34 @@ try {
   // Lạy Phật ngoài chánh điện -> bị từ chối với lý do rõ ràng
   await A.page.keyboard.press('Digit1');
   await A.page.waitForSelector('.toast.bad', { timeout: 30000 });
-  check('Lạy Phật ngoài chánh điện bị từ chối', (await A.page.textContent('.toast.bad')).includes('Chánh điện'));
+  check('Chưa quỳ trên bồ đoàn thì không lạy Phật được', (await A.page.textContent('.toast.bad')).includes('Quỳ xuống'));
 
   // Đi vào chánh điện bằng bàn phím
   await A.page.locator('canvas').first().click({ position: { x: 640, y: 300 } });
   await A.page.keyboard.down('ShiftLeft'); await A.page.keyboard.down('KeyW');
-  // Giữ phím W cho tới khi vào sâu trong chánh điện (máy kiểm thử render chậm nên không đi theo thời gian cố định)
-  await A.page.waitForFunction(() => /Chánh điện|Đại hùng/.test(document.querySelector('.zone-name')?.textContent || '') && !!document.querySelector('.interact:not(.hidden)')?.textContent?.includes('Lạy'), null, { timeout: 120000, polling: 200 }).catch(() => {});
-  await A.page.waitForTimeout(1500);
+  // Giữ phím W cho tới khi tới bồ đoàn trong chánh điện (máy kiểm thử render chậm nên không đi theo thời gian cố định)
+  for (let i = 0; i < 120; i++) {
+    await A.page.waitForTimeout(1000);
+    if ((await A.page.textContent('.interact')).includes('Quỳ xuống') && /Chánh điện|Đại hùng/.test(await A.page.textContent('.zone-name'))) break;
+  }
   await A.page.keyboard.up('KeyW'); await A.page.keyboard.up('ShiftLeft');
   await A.page.waitForTimeout(600);
   const zone = await A.page.textContent('.zone-name');
   check('Di chuyển tới Chánh điện', zone.includes('Chánh điện') || zone.includes('Đại hùng'), zone);
   await A.page.screenshot({ path: `${OUT}/02-chanh-dien.png` });
+  await A.page.getByRole('button', { name: /Quỳ xuống/ }).click();
+  await A.page.waitForSelector('.seat-hint:has-text("Đang quỳ")');
+  check('Đến bồ đoàn: chọn Quỳ xuống', true);
   await A.page.keyboard.press('Digit1');
   await A.page.waitForSelector('.toast.good', { timeout: 30000 });
   const t = await A.page.textContent('.toast.good');
-  check('Lạy Phật trong chánh điện được cộng công đức', t.includes('công đức'), t);
+  check('Quỳ trên bồ đoàn rồi lạy Phật được cộng công đức', t.includes('công đức'), t);
   await A.page.waitForTimeout(900);
   await A.page.screenshot({ path: `${OUT}/03-lay-phat.png` });
 
+  await A.page.keyboard.press('KeyE');
+  await A.page.waitForSelector('.interact:has-text("Ngồi xuống")');
+  check('Đứng dậy khỏi bồ đoàn', true);
   // Người chơi B (điện thoại)
   const B = await newPlayer(browser, 'e2eb' + stamp, 'Diệu Hạnh ' + Tag, { width: 390, height: 844 });
   await B.page.waitForTimeout(1500);
@@ -163,12 +178,18 @@ try {
   await np.waitForSelector('.cer-banner:not(.hidden)', { timeout: 30000 });
   await np.keyboard.press('KeyL');
   await np.waitForSelector('.drawer h2:has-text("Đại lễ đang diễn ra")');
+  await np.keyboard.press('Escape');
+  await np.waitForSelector('.interact:has-text("Quỳ xuống")');
+  await np.keyboard.press('KeyQ');
+  await np.waitForSelector('.seat-hint:has-text("Đang quỳ")');
+  await np.keyboard.press('KeyL');
+  await np.waitForSelector('.drawer h2:has-text("Đại lễ đang diễn ra")');
   await np.getByRole('button', { name: 'Ngồi tụng cùng đại chúng' }).click();
   await np.waitForTimeout(4000);
   await np.screenshot({ path: `${OUT}/14-dai-le.png` });
   const waitMs = (cer.current ? cer.current.endAt - cer.serverNow : 300000) + 60000;
   const got = await np.waitForSelector('.toast:has-text("Viên mãn đại lễ")', { timeout: waitMs }).then(() => true).catch(() => false);
-  check('Tham dự trọn đại lễ trong Chánh điện và nhận thưởng', got);
+  check('Quỳ trên bồ đoàn dự trọn đại lễ và nhận thưởng', got);
 
   for (const [who, p] of [['A', A], ['B', B]]) check(`Không có lỗi JavaScript (${who})`, p.errors.length === 0, p.errors.slice(0, 3).join(' | '));
   const hScroll = await B.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);

@@ -12,6 +12,9 @@ const { pool } = await import('../src/db.ts');
 const { migrate } = await import('../src/migrate.ts');
 const { createApp } = await import('../src/app.ts');
 const { attachRealtime } = await import('../src/realtime.ts');
+const { setMailer } = await import('../src/mailer.ts');
+const outbox: { to: string; subject: string; text: string }[] = [];
+setMailer(async (m) => { outbox.push(m); });
 const http = await import('node:http');
 
 let base = '';
@@ -30,12 +33,12 @@ async function api(path: string, opts: { method?: string; body?: unknown; token?
 let n = 0;
 async function newPlayer(name: string) {
   const username = `u${Date.now().toString(36)}${n++}`;
-  const reg = await api('/auth/register', { body: { username, password: 'matkhau123' } });
+  const reg = await api('/auth/register', { body: { username, email: `${username}@example.com`, password: 'matkhau123' } });
   assert.equal(reg.status, 200, JSON.stringify(reg.data));
   const servers = (await api('/servers')).data;
   const ch = await api('/characters', { token: reg.data.token, body: { serverId: servers[0].id, dharmaName: name, gender: 'nu', hair: 'búi', skin: '#e2b58e' } });
   assert.equal(ch.status, 200, JSON.stringify(ch.data));
-  return { token: reg.data.token as string, cid: ch.data.id as number, username, recovery: reg.data.recoveryCode as string, userId: reg.data.user.id as number };
+  return { token: reg.data.token as string, cid: ch.data.id as number, username, email: `${username}@example.com`, userId: reg.data.user.id as number };
 }
 const at = (cid: number, x: number, z: number) => pool.query('UPDATE characters SET pos_x=$2, pos_z=$3 WHERE id=$1', [cid, x, z]);
 const wallet = async (cid: number) => Object.fromEntries((await pool.query('SELECT code, balance FROM currencies WHERE character_id=$1', [cid])).rows.map((r) => [r.code, Number(r.balance)]));
@@ -61,6 +64,21 @@ function connect(token: string, cid: number): Promise<{ ws: WebSocket; msgs: any
   });
 }
 
+/** Ngồi/quỳ trên một bồ đoàn qua kết nối realtime (dấu mộc được đánh sẵn để không lẫn phần thưởng) */
+async function seat(token: string, cid: number, matId: string, kind: 'sit' | 'kneel') {
+  const { MATS } = await import('../../shared/content.ts');
+  const mat = MATS.find((m) => m.id === matId)!;
+  await at(cid, mat.x, mat.z + 0.5);
+  await pool.query(`INSERT INTO pilgrimage_progress (character_id, temple_id, zone_code)
+                    SELECT $1, t.id, z->>'code' FROM temples t, jsonb_array_elements(t.zones) z WHERE t.code='tam_an' ON CONFLICT DO NOTHING`, [cid]);
+  const c = await connect(token, cid);
+  await c.wait((m) => m.t === 'welcome');
+  c.ws.send(JSON.stringify({ t: 'pose', kind, mat: matId }));
+  const ok = await c.wait((m) => m.t === 'pose_ok' && m.kind === kind);
+  assert.equal(ok.mat, matId);
+  return c;
+}
+
 before(async () => {
   await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   await migrate(false);
@@ -76,23 +94,60 @@ after(async () => {
   setTimeout(() => process.exit(0), 50).unref();
 });
 
-test('đăng ký, đăng nhập, khôi phục mật khẩu bằng mã khôi phục', async () => {
+test('đăng ký cần email hợp lệ, không trùng', async () => {
+  const u = 'mail' + Date.now().toString(36);
+  assert.equal((await api('/auth/register', { body: { username: u, password: 'matkhau123' } })).data.code, 'bad_email');
+  assert.equal((await api('/auth/register', { body: { username: u, email: 'abc', password: 'matkhau123' } })).data.code, 'bad_email');
+  assert.equal((await api('/auth/register', { body: { username: u, email: `${u}@example.com`, password: 'matkhau123' } })).status, 200);
+  const dup = await api('/auth/register', { body: { username: u + 'x', email: `${u.toUpperCase()}@EXAMPLE.com`, password: 'matkhau123' } });
+  assert.equal(dup.data.code, 'email_taken');
+});
+
+test('quên mật khẩu: gửi mã qua email, mã đúng mới đặt lại được, dùng một lần, thu hồi phiên cũ', async () => {
   const p = await newPlayer('Minh Tâm');
-  assert.match(p.recovery, /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-  assert.equal((await api('/auth/login', { body: { username: p.username, password: 'sai-mat-khau' } })).status, 401);
-  assert.equal((await api('/auth/login', { body: { username: p.username, password: 'matkhau123' } })).status, 200);
-  const rec = await api('/auth/recover', { body: { username: p.username, recoveryCode: p.recovery, newPassword: 'matkhaumoi1' } });
-  assert.equal(rec.status, 200);
-  // phiên cũ bị vô hiệu hóa
-  assert.equal((await api('/me', { token: p.token })).status, 401);
+  outbox.length = 0;
+  const generic = (await api('/auth/forgot', { body: { email: 'khong-ton-tai@example.com' } })).data.message;
+  assert.equal(outbox.length, 0, 'email không tồn tại thì không gửi thư');
+  const f = await api('/auth/forgot', { body: { email: p.email.toUpperCase() } });
+  assert.equal(f.status, 200);
+  assert.equal(f.data.message, generic, 'thông báo giống hệt nhau để không lộ email nào đã đăng ký');
+  assert.equal(outbox.length, 1);
+  assert.equal(outbox[0].to, p.email);
+  const code = outbox[0].text.match(/\b(\d{6})\b/)![1];
+  // Yêu cầu lại ngay lập tức: không gửi thêm (chống spam hộp thư)
+  await api('/auth/forgot', { body: { email: p.email } });
+  assert.equal(outbox.length, 1);
+  const wrongCode = code === '000000' ? '111111' : '000000';
+  assert.equal((await api('/auth/reset', { body: { email: p.email, code: wrongCode, newPassword: 'matkhaumoi1' } })).data.code, 'bad_code');
+  const ok = await api('/auth/reset', { body: { email: p.email, code, newPassword: 'matkhaumoi1' } });
+  assert.equal(ok.status, 200, JSON.stringify(ok.data));
+  assert.ok(ok.data.token);
+  assert.equal((await api('/me', { token: p.token })).status, 401, 'phiên cũ bị thu hồi');
+  assert.equal((await api('/auth/login', { body: { username: p.username, password: 'matkhau123' } })).status, 401);
   assert.equal((await api('/auth/login', { body: { username: p.username, password: 'matkhaumoi1' } })).status, 200);
-  // mã khôi phục cũ không dùng lại được
-  assert.equal((await api('/auth/recover', { body: { username: p.username, recoveryCode: p.recovery, newPassword: 'matkhaumoi2' } })).status, 401);
+  assert.equal((await api('/auth/reset', { body: { email: p.email, code, newPassword: 'matkhaumoi2' } })).data.code, 'bad_code', 'mã chỉ dùng được một lần');
+});
+
+test('quên mật khẩu: mã hết hạn hoặc sai quá 5 lần thì không dùng được', async () => {
+  const p = await newPlayer('Quên Mật');
+  outbox.length = 0;
+  await api('/auth/forgot', { body: { email: p.email } });
+  const code = outbox[0].text.match(/\b(\d{6})\b/)![1];
+  const wrong = code === '000000' ? '111111' : '000000';
+  await pool.query(`UPDATE password_resets SET attempts=5 WHERE user_id=$1`, [p.userId]);
+  assert.equal((await api('/auth/reset', { body: { email: p.email, code, newPassword: 'matkhaumoi1' } })).data.code, 'bad_code', 'đã sai 5 lần thì khoá mã');
+  await pool.query(`UPDATE password_resets SET attempts=0, expires_at=now() - interval '1 minute' WHERE user_id=$1`, [p.userId]);
+  assert.equal((await api('/auth/reset', { body: { email: p.email, code, newPassword: 'matkhaumoi1' } })).data.code, 'bad_code', 'mã hết hạn');
+  void wrong;
+  // Đổi email khôi phục cần đúng mật khẩu
+  assert.equal((await api('/me/email', { token: p.token, body: { email: 'moi@example.com', password: 'sai-mat-khau' } })).status, 401);
+  assert.equal((await api('/me/email', { token: p.token, body: { email: 'moi' + p.username + '@example.com', password: 'matkhau123' } })).status, 200);
+  assert.equal((await api('/me', { token: p.token })).data.user.email, 'moi' + p.username + '@example.com');
 });
 
 test('pháp danh trùng và không hợp lệ bị từ chối', async () => {
   const a = await newPlayer('Diệu Hạnh');
-  const reg = await api('/auth/register', { body: { username: 'trungten' + Date.now().toString(36), password: 'matkhau123' } });
+  const reg = await api('/auth/register', { body: { username: 'trungten' + Date.now().toString(36), email: 'trungten' + Date.now().toString(36) + '@example.com', password: 'matkhau123' } });
   const dup = await api('/characters', { token: reg.data.token, body: { serverId: 1, dharmaName: 'diệu hạnh', gender: 'nu', hair: 'búi', skin: '#e2b58e' } });
   assert.equal(dup.status, 400);
   const badName = await api('/characters', { token: reg.data.token, body: { serverId: 1, dharmaName: 'abc123', gender: 'nu', hair: 'búi', skin: '#e2b58e' } });
@@ -119,10 +174,12 @@ test('không dùng được nhân vật của người khác', async () => {
 test('lạy Phật: phải ở chánh điện, có nhịp tối thiểu, cộng thưởng do server tính', async () => {
   const p = await newPlayer('Tâm Thiện');
   await api(`/c/${p.cid}/enter`, { token: p.token, body: {} });
+  // Chưa quỳ trên bồ đoàn: bị từ chối, dù đứng trong Chánh điện
+  await at(p.cid, 0, -12);
   const wrong = await api(`/c/${p.cid}/act/prostrate`, { token: p.token, body: {} });
   assert.equal(wrong.status, 400);
-  assert.equal(wrong.data.code, 'wrong_zone');
-  await at(p.cid, 0, -12);
+  assert.equal(wrong.data.code, 'need_pose');
+  const c = await seat(p.token, p.cid, 'h13', 'kneel');
   const ok = await api(`/c/${p.cid}/act/prostrate`, { token: p.token, body: {} });
   assert.equal(ok.status, 200, JSON.stringify(ok.data));
   assert.equal(ok.data.rewarded, true);
@@ -134,6 +191,33 @@ test('lạy Phật: phải ở chánh điện, có nhịp tối thiểu, cộng 
   const hack = await api(`/c/${p.cid}/act/prostrate`, { token: p.token, body: { merit: 99999 } });
   assert.equal(hack.status, 429);
   assert.equal((await wallet(p.cid)).merit, 1);
+  c.ws.close();
+});
+
+test('bồ đoàn: ngồi không lạy được, bồ đoàn có người thì không ngồi được, đi khỏi thì tự đứng dậy', async () => {
+  const a = await newPlayer('Ngồi Trước');
+  const b = await newPlayer('Đến Sau');
+  const ca = await seat(a.token, a.cid, 'h03', 'sit');
+  let cb: Awaited<ReturnType<typeof connect>> | null = null;
+  try {
+  await pool.query(`DELETE FROM activity_history WHERE character_id=$1`, [a.cid]);
+  const sitPro = await api(`/c/${a.cid}/act/prostrate`, { token: a.token, body: {} });
+  assert.equal(sitPro.data.code, 'need_pose', 'ngồi thì không lạy được, phải quỳ');
+  // B tới đúng bồ đoàn đó
+  await at(b.cid, 0, -15);
+  cb = await connect(b.token, b.cid);
+  await cb.wait((m) => m.t === 'welcome');
+  cb.ws.send(JSON.stringify({ t: 'pose', kind: 'kneel', mat: 'h03' }));
+  const busy = await cb.wait((m) => m.t === 'toast' && m.text.includes('đã có người'));
+  assert.ok(busy);
+  // Bồ đoàn ở quá xa
+  cb.ws.send(JSON.stringify({ t: 'pose', kind: 'kneel', mat: 'm0' }));
+  assert.ok(await cb.wait((m) => m.t === 'toast' && m.text.includes('gần bồ đoàn')));
+  // A đứng lên đi chỗ khác thì mất tư thế
+  ca.ws.send(JSON.stringify({ t: 'move', x: 0.6, z: -14.8, ry: 0, a: 'walk' }));
+  assert.ok(await ca.wait((m) => m.t === 'pose_ok' && m.kind === null));
+  assert.equal((await api(`/c/${a.cid}/meditate/start`, { token: a.token, body: { minutes: 5 } })).data.code, 'need_pose');
+  } finally { ca.ws.close(); cb?.ws.close(); }
 });
 
 test('giới hạn ngày: vượt trần vẫn ghi lịch sử nhưng không cộng thưởng', async () => {
@@ -178,7 +262,7 @@ test('lần hạt: chặn lần quá nhanh, thưởng khi tròn 108 hạt', asyn
 test('thiền: đo thời gian thực trên server, xả thiền sớm chỉ tính phút đã ngồi', async () => {
   const p = await newPlayer('Tĩnh Lặng');
   await api(`/c/${p.cid}/enter`, { token: p.token, body: {} });
-  await at(p.cid, -24, 22);
+  const c = await seat(p.token, p.cid, 'm0', 'sit');
   assert.equal((await api(`/c/${p.cid}/meditate/start`, { token: p.token, body: { minutes: 7 } })).status, 400);
   assert.equal((await api(`/c/${p.cid}/meditate/start`, { token: p.token, body: { minutes: 10 } })).status, 200);
   const early = await api(`/c/${p.cid}/meditate/finish`, { token: p.token, body: {} });
@@ -193,12 +277,13 @@ test('thiền: đo thời gian thực trên server, xả thiền sớm chỉ tí
   await pool.query(`UPDATE activity_sessions SET started_at = now() - interval '5 hours' WHERE character_id=$1`, [p.cid]);
   const capped = await api(`/c/${p.cid}/meditate/finish`, { token: p.token, body: {} });
   assert.equal(capped.data.minutes, 5);
+  c.ws.close();
 });
 
 test('tụng kinh: phải đủ thời lượng tối thiểu', async () => {
   const p = await newPlayer('Trì Kinh');
   await api(`/c/${p.cid}/enter`, { token: p.token, body: {} });
-  await at(p.cid, 22, -20);
+  const c = await seat(p.token, p.cid, 'c2', 'sit');
   assert.equal((await api(`/c/${p.cid}/chant/start`, { token: p.token, body: { code: 'hoi_huong' } })).status, 200);
   const fast = await api(`/c/${p.cid}/chant/finish`, { token: p.token, body: {} });
   assert.equal(fast.status, 400);
@@ -206,6 +291,7 @@ test('tụng kinh: phải đủ thời lượng tối thiểu', async () => {
   const ok = await api(`/c/${p.cid}/chant/finish`, { token: p.token, body: {} });
   assert.equal(ok.status, 200);
   assert.equal(ok.data.gains.merit, 15);
+  c.ws.close();
 });
 
 test('nhiệm vụ: chưa đủ thì không nhận, đủ thì nhận một lần', async () => {
@@ -229,7 +315,7 @@ test('nhiệm vụ: chưa đủ thì không nhận, đủ thì nhận một lầ
 test('lên cấp: cộng Sen thưởng, ghi sổ giao dịch', async () => {
   const p = await newPlayer('Tinh Tấn');
   await api(`/c/${p.cid}/enter`, { token: p.token, body: {} });
-  await at(p.cid, 22, -20);
+  const c = await seat(p.token, p.cid, 'c1', 'kneel');
   await api(`/c/${p.cid}/chant/start`, { token: p.token, body: { code: 'hoi_huong' } });
   await pool.query(`UPDATE activity_sessions SET started_at = now() - interval '30 seconds' WHERE character_id=$1`, [p.cid]);
   await pool.query(`UPDATE character_stats SET exp=50 WHERE character_id=$1`, [p.cid]);
@@ -237,6 +323,7 @@ test('lên cấp: cộng Sen thưởng, ghi sổ giao dịch', async () => {
   assert.deepEqual(r.data.levelUps, [2]);
   const tx = (await pool.query(`SELECT * FROM transactions WHERE character_id=$1 AND kind='level_up'`, [p.cid])).rows;
   assert.equal(Number(tx[0].delta), 20);
+  c.ws.close();
 });
 
 test('cửa hàng: thiếu Sen bị từ chối, đủ Sen mua được, không mua trùng áo', async () => {
@@ -346,9 +433,10 @@ test('sự kiện nhân công đức do admin cấu hình được áp dụng', 
   const ev = await api('/admin/events', { token: root, body: { name: 'Rằm thử nghiệm', merit_multiplier: 2, starts_at: new Date(Date.now() - 60000).toISOString(), ends_at: new Date(Date.now() + 60000).toISOString(), is_active: true } });
   assert.equal(ev.status, 200, JSON.stringify(ev.data));
   const p = await newPlayer('Rằm Tháng');
-  await at(p.cid, 0, -12);
+  const c = await seat(p.token, p.cid, 'h20', 'kneel');
   const r = await api(`/c/${p.cid}/act/prostrate`, { token: p.token, body: {} });
   assert.equal(r.data.gains.merit, 2);
+  c.ws.close();
   await api(`/admin/events/${ev.data.id}`, { method: 'PATCH', token: root, body: { is_active: false } });
 });
 
@@ -371,13 +459,15 @@ test('đại lễ: người ở Chánh điện đủ thời lượng được th
   try {
     const inside = await newPlayer('Dự Lễ Trong');
     const outside = await newPlayer('Dự Lễ Ngoài');
-    await at(inside.cid, 0, -12);
-    const ci = await connect(inside.token, inside.cid);
+    const standing = await newPlayer('Đứng Trong Điện');
+    const ci = await seat(inside.token, inside.cid, 'h16', 'kneel');
+    assert.ok(ci.msgs.find((m) => m.t === 'welcome').ceremony.lunar.label, 'welcome có thông tin âm lịch');
     const co = await connect(outside.token, outside.cid);
-    const w = await ci.wait((m) => m.t === 'welcome');
-    assert.ok(w.ceremony.lunar.label, 'welcome có thông tin âm lịch');
     await co.wait((m) => m.t === 'welcome');
-    await ci.wait((m) => m.t === 'stamp' && m.zone === 'main_hall'); // dấu mộc Chánh điện (+5) cộng trước khi đo
+    // Người đứng trong Chánh điện nhưng không ngồi/quỳ trên bồ đoàn: không được ghi nhận
+    await at(standing.cid, 3, -9);
+    const cs = await connect(standing.token, standing.cid);
+    await cs.wait((m) => m.t === 'welcome');
     const root = (await api('/auth/login', { body: { username: 'root', password: 'root-pass-123' } })).data.token;
     const before = (await wallet(inside.cid)).merit;
     // Người chơi thường không được tổ chức lễ
@@ -395,6 +485,9 @@ test('đại lễ: người ở Chánh điện đủ thời lượng được th
     const rows = (await pool.query('SELECT character_id, rewarded FROM ceremony_attendance')).rows;
     assert.ok(rows.some((r) => Number(r.character_id) === inside.cid && r.rewarded));
     assert.ok(!rows.some((r) => Number(r.character_id) === outside.cid));
+    assert.ok(!rows.some((r) => Number(r.character_id) === standing.cid), 'đứng trong điện mà không ngồi/quỳ thì không được ghi nhận');
+    assert.ok(!cs.msgs.some((m) => m.t === 'ceremony_result'));
+    cs.ws.close();
     assert.equal(outMerit, 5, 'chỉ có 5 công đức từ dấu mộc cổng');
     const ms = (await api(`/c/${inside.cid}/missions`, { token: inside.token })).data;
     assert.equal(ms.find((m: any) => m.code === 'd_ceremony').progress, 1);

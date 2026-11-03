@@ -5,7 +5,7 @@ import { players, send } from './presence.ts';
 import { rewardCeremony } from './economy.ts';
 import {
   CEREMONY_HOURS, CEREMONY_HOLY_EXTRA_HOUR, CEREMONY_HOLY_MULT, CEREMONY_ATTEND_RATIO, CEREMONY_ANNOUNCE_MIN,
-  ceremonySeconds, inAnyZone, type Zone,
+  ceremonySeconds, inAnyZone, poseAllows, type Zone,
 } from '../../shared/content.ts';
 import { lunarOf, lunarLabel, isHolyDay } from '../../shared/lunar.ts';
 
@@ -98,7 +98,8 @@ async function sample() {
   c.samples++;
   let present = 0;
   for (const p of players.values()) {
-    if (inAnyZone(await zonesOf(p.templeId), ['main_hall'], p.x, p.z)) {
+    // Có mặt = đang ngồi/quỳ trên bồ đoàn trong Chánh điện
+    if (poseAllows('ceremony', p.seat) && inAnyZone(await zonesOf(p.templeId), ['main_hall'], p.x, p.z)) {
       c.attend.set(p.charId, (c.attend.get(p.charId) || 0) + 1);
       present++;
     }

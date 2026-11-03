@@ -168,3 +168,36 @@ export function ceremonyLineAt(elapsedMs: number, durationMs: number): number {
   for (let i = 0; i < prog.length; i++) { t += prog[i].seconds * 1000 * scale; if (elapsedMs < t) return i; }
   return prog.length;
 }
+
+// ---------- Bồ đoàn: phải ngồi/quỳ rồi mới hành lễ ----------
+export type SeatKind = 'sit' | 'kneel';
+export interface Mat { id: string; group: 'hall' | 'meditation' | 'chanting'; x: number; z: number; faceX: number; faceZ: number }
+
+/** Vị trí bồ đoàn, khớp với mô hình 3D (client/src/world/temple.ts) */
+export const MATS: Mat[] = [
+  // Chánh điện: 3 hàng × 7, hướng về tượng Phật
+  ...[0, 1, 2].flatMap((r) => [-3, -2, -1, 0, 1, 2, 3].map((i) => ({ id: `h${r}${i + 3}`, group: 'hall' as const, x: i * 1.6, z: -15.5 + r * 2, faceX: i * 1.6, faceZ: -22 }))),
+  // Rừng trúc thiền: 6 bồ đoàn quanh đèn đá
+  ...[0, 1, 2, 3, 4, 5].map((i) => {
+    const a = (i / 6) * Math.PI * 2;
+    return { id: `m${i}`, group: 'meditation' as const, x: -24 + Math.cos(a) * 2.4, z: 22 + Math.sin(a) * 2.4, faceX: -24, faceZ: 22 };
+  }),
+  // Giảng đường: 5 bồ đoàn hướng về án thư
+  ...[-2, -1, 0, 1, 2].map((i) => ({ id: `c${i + 2}`, group: 'chanting' as const, x: 22 + i * 1.5, z: -19.5, faceX: 22 + i * 1.5, faceZ: -24 })),
+];
+export const MAT_REACH = 1.8;     // khoảng cách tối đa để ngồi xuống một bồ đoàn
+
+/** Tư thế bắt buộc cho từng nghi lễ */
+export const POSE_RULES: Record<string, { poses: SeatKind[]; groups: Mat['group'][]; hint: string }> = {
+  prostrate: { poses: ['kneel'], groups: ['hall'], hint: 'Hãy đến bồ đoàn trong Chánh điện và chọn "Quỳ xuống" để lạy Phật.' },
+  meditate: { poses: ['sit'], groups: ['hall', 'meditation'], hint: 'Hãy chọn "Ngồi xuống" trên bồ đoàn ở Rừng trúc thiền hoặc Chánh điện để thiền.' },
+  chant: { poses: ['sit', 'kneel'], groups: ['hall', 'chanting'], hint: 'Hãy ngồi hoặc quỳ trên bồ đoàn ở Giảng đường hoặc Chánh điện để tụng kinh.' },
+  ceremony: { poses: ['sit', 'kneel'], groups: ['hall'], hint: 'Hãy ngồi hoặc quỳ trên bồ đoàn trong Chánh điện để được ghi nhận.' },
+};
+export function poseAllows(rule: string, seat: { kind: SeatKind; mat: string } | null | undefined): boolean {
+  const r = POSE_RULES[rule];
+  if (!r) return true;
+  if (!seat) return false;
+  const mat = MATS.find((m) => m.id === seat.mat);
+  return !!mat && r.poses.includes(seat.kind) && r.groups.includes(mat.group);
+}
